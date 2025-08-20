@@ -26,6 +26,9 @@ class EdgeTTSClient(TTSClient):
             print("convert srt to mp3 voice using edge successfully")
         except Exception as e:
             print(f"convert srt to mp3 voice using edge exception: {e}")
+            # 检查是否是403错误，如果是则立即抛出异常
+            if "403" in str(e) or "Invalid response status" in str(e):
+                raise Exception(f"Edge TTS failed with 403 error: {e}")
         finally:
             pending = asyncio.all_tasks(loop)
             for task in pending:
@@ -36,9 +39,6 @@ class EdgeTTSClient(TTSClient):
 
             return len(pending)
 
-    @tenacity.retry(wait=tenacity.wait_exponential(multiplier=1, min=4, max=10),
-                    stop=tenacity.stop_after_attempt(5),
-                    reraise=True)
     def srt_to_voice(self, srt_file_path, output_dir):
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
@@ -60,7 +60,12 @@ class EdgeTTSClient(TTSClient):
             file_names.append(file_name)
             coroutines.append(self._convert_srt_to_voice_edge(sub_title.content, output_mp3_path))
 
-        EdgeTTSClient._run_convert_srt_to_voice_edge_coroutines(coroutines)
+        # 执行TTS转换，如果失败则抛出异常
+        failed_tasks = EdgeTTSClient._run_convert_srt_to_voice_edge_coroutines(coroutines)
+        
+        # 如果有失败的任务，抛出异常
+        if failed_tasks > 0:
+            raise Exception(f"Edge TTS failed for {failed_tasks} tasks")
 
         for mp3_file_name, wav_file_name in zip(file_mp3_names, file_names):
             mp3_path = os.path.join(output_dir, mp3_file_name)

@@ -594,7 +594,7 @@ def tts(video_id):
     except Exception as e:
         exception = e
 
-    return jsonify({"message": log_warning_return_str(f"tts failed: {exception}")}), 500
+    return jsonify({"message": log_error_return_str(f"TTS failed: {exception}")}), 500
 
 
 @app.route('/tts/<video_id>', methods=['GET'])
