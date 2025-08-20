@@ -69,24 +69,22 @@ class GPTTranslator(Translator):
         # 确保URL以/结尾
         api_url = self.base_url.rstrip('/') + "/chat/completions"
         
-        print(f"Making API request to: {api_url}")
-        print(f"Payload: {json.dumps(payload, ensure_ascii=False, indent=2)}")
+        # 移除调试打印，只保留进度信息
         
-        response = requests.post(api_url, headers=headers, json=payload, proxies=self.proxies)
+        response = requests.post(api_url, headers=headers, json=payload, proxies=self.proxies, timeout=60)
         
         # 检查响应状态
         if response.status_code != 200:
-            print(f"API request failed with status {response.status_code}: {response.text}")
             raise Exception(f"API request failed: {response.status_code} - {response.text}")
         
         try:
             return response.json()
         except json.JSONDecodeError as e:
-            print(f"Failed to parse JSON response: {response.text}")
             raise Exception(f"Invalid JSON response: {e}")
 
     def process_text(self, text, max_tokens):
         st = time.time()
+        
         system_text = ("You are a professional subtitle translator that translates English subtitles to idiomatic "
                        "Chinese subtitles.")
         assistant_text = f"Here are some key terms and their translations:\n{json.dumps(self.terms, ensure_ascii=False)}"
@@ -117,11 +115,12 @@ class GPTTranslator(Translator):
             text_result = results['response']
         else:
             # 如果都不匹配，尝试其他可能的格式
-            print(f"Warning: Unexpected API response format: {results}")
             if isinstance(results, dict) and 'message' in results:
                 text_result = results['message'].get('content', '')
             else:
                 text_result = str(results)
+        
+        # 处理markdown格式
         if '```' in text_result:
             text_result = text_result.split('```')[1]
             text_result = text_result.strip().replace("\n", "").replace("translated text", "").replace("```", "")
@@ -130,6 +129,8 @@ class GPTTranslator(Translator):
         usage = results.get('usage', {})
         model = results.get('model', self.model_name)
         
+        # 移除统计信息打印，只保留进度信息
+        
         result_dict = {"text_result": text_result,
                        "model": model,
                        "usage": usage,
@@ -137,8 +138,59 @@ class GPTTranslator(Translator):
                        'time': et - st}
         return result_dict
 
-    def translate_en_to_zh(self, texts, max_tokens=1200, max_workers=30):
+    def translate_en_to_zh(self, texts, max_tokens=1200, max_workers=30, timeout=300):
+        """
+        翻译英文文本到中文
+        
+        Args:
+            texts: 要翻译的文本列表
+            max_tokens: 最大token数
+            max_workers: 最大并发工作线程数
+            timeout: 超时时间（秒），默认5分钟
+        """
+        print(f"🚀 开始翻译 {len(texts)} 个文本片段，最大并发数: {max_workers}，超时时间: {timeout}秒")
+        
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = [executor.submit(self.process_text, text, max_tokens) for text in texts]
-            results = [future.result() for future in futures]
+            # 提交所有任务
+            futures = {executor.submit(self.process_text, text, max_tokens): i for i, text in enumerate(texts)}
+            results = [None] * len(texts)  # 预分配结果列表
+            completed_count = 0
+            
+            # 处理完成的任务，带超时
+            try:
+                for future in concurrent.futures.as_completed(futures, timeout=timeout):
+                    try:
+                        result = future.result()
+                        index = futures[future]
+                        results[index] = result
+                        completed_count += 1
+                        
+                        # 打印进度
+                        remaining = len(texts) - completed_count
+                        print(f"✅ 完成 {completed_count}/{len(texts)} 个翻译请求，还剩 {remaining} 个请求")
+                        
+                        if remaining == 0:
+                            print("🎉 所有翻译请求已完成！")
+                        
+                    except Exception as e:
+                        index = futures[future]
+                        print(f"❌ 第 {index + 1} 个翻译请求失败: {e}")
+                        # 设置默认结果
+                        results[index] = {"text_result": texts[index], "model": self.model_name, "usage": {}, "all_usage": 0, "time": 0}
+                        completed_count += 1
+                        
+            except concurrent.futures.TimeoutError:
+                print(f"⏰ 翻译超时！已完成 {completed_count}/{len(texts)} 个请求")
+                # 取消未完成的任务
+                for future in futures:
+                    if not future.done():
+                        future.cancel()
+                        print(f"❌ 取消未完成的翻译请求")
+                
+                # 为未完成的任务设置默认结果
+                for future, index in futures.items():
+                    if results[index] is None:
+                        results[index] = {"text_result": texts[index], "model": self.model_name, "usage": {}, "all_usage": 0, "time": 0}
+                        print(f"⚠️ 为第 {index + 1} 个请求设置默认结果")
+        
         return [result['text_result'] for result in results]
