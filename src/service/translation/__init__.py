@@ -12,13 +12,13 @@ __all__ = [
 ]
 
 
-def get_translator(translate_vendor, api_key=None, proxies=None, base_url=None, model_name=None):
+def get_translator(translate_vendor, api_key=None, proxies=None, base_url=None, model_name=None, cache_dir="./translation_cache"):
     if translate_vendor == "google":
-        return GoogleTranslator(proxy=proxies)
+        return GoogleTranslator(proxy=proxies, cache_dir=cache_dir)
     elif translate_vendor == "deepl":
         if not api_key:
             raise ValueError("Missing translate key for DeepL.")
-        return DeepLTranslator(key=api_key)
+        return DeepLTranslator(key=api_key, cache_dir=cache_dir)
     elif "gpt" in translate_vendor:
         # 对于本地部署，api_key可以为空
         if translate_vendor == "gpt-local" and not api_key:
@@ -31,7 +31,8 @@ def get_translator(translate_vendor, api_key=None, proxies=None, base_url=None, 
             api_key=api_key, 
             model_name=actual_model_name, 
             base_url=base_url,
-            proxies=proxies
+            proxies=proxies,
+            cache_dir=cache_dir
         )
     else:
         raise ValueError("Unknown translation vendor.")

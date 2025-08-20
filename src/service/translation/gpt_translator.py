@@ -10,13 +10,17 @@ GHATGPT_TERMS_FILE = "../../../configs/gpt_terms.json"
 
 
 class GPTTranslator(Translator):
-    def __init__(self, api_key, model_name="gpt-3.5-turbo-0125", base_url=None, proxies=None, terms_file=GHATGPT_TERMS_FILE):
+    def __init__(self, api_key, model_name="gpt-3.5-turbo-0125", base_url=None, proxies=None, terms_file=GHATGPT_TERMS_FILE, cache_dir="./translation_cache"):
+        super().__init__(cache_dir)
         self.api_key = api_key
         self.base_url = base_url if base_url else DEFAULT_URL
         self.model_name = model_name
         self.proxies = proxies
         self.terms = {}
         self.load_terms(terms_file)
+    
+    def get_translator_name(self):
+        return f"gpt_{self.model_name.replace(':', '_').replace('-', '_')}"
 
     def load_terms(self, terms_file):
         try:

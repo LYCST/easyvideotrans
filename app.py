@@ -407,7 +407,9 @@ def transhlate_to_zh(video_id):
         return jsonify({"message": log_warning_return_str("Unsupported translate vendor.")}), 404
 
     try:
-        translator = get_translator(translateVendor, api_key, proxies=None, base_url=base_url, model_name=model_name)
+        # 设置缓存目录在output_path下
+        cache_dir = os.path.join(output_path, "translation_cache")
+        translator = get_translator(translateVendor, api_key, proxies=None, base_url=base_url, model_name=model_name, cache_dir=cache_dir)
         ret = translator.translate_srt(source_file_name_and_path=en_srt_merged_path,
                                        output_file_name_and_path=zh_srt_merged_path)
         if ret:
