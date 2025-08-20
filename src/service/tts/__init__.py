@@ -1,4 +1,5 @@
 from .edge_tts import EdgeTTSClient
+from .fallback_tts import FallbackTTSClient
 from .tts_client import TTSClient
 
 # 检查 Python 版本和 TTS 兼容性
@@ -34,6 +35,7 @@ except Exception as e:
 
 __all__ = [
     "EdgeTTSClient",
+    "FallbackTTSClient",
     "TTSClient"
 ]
 
@@ -48,7 +50,7 @@ def get_tts_client(tts_vendor, character=None, **kwargs) -> TTSClient:
     获取 TTS 客户端
     
     Args:
-        tts_vendor: TTS 供应商 ('edge', 'xtts_v2')
+        tts_vendor: TTS 供应商 ('edge', 'xtts_v2', 'fallback')
         character: 语音角色（用于 edge TTS）
         **kwargs: 其他参数
             - reference_audio_path: 参考音频路径（用于 XTTS v2）
@@ -57,6 +59,8 @@ def get_tts_client(tts_vendor, character=None, **kwargs) -> TTSClient:
     """
     if tts_vendor == 'edge':
         return EdgeTTSClient(character=character)
+    elif tts_vendor == 'fallback':
+        return FallbackTTSClient(character=character)
     elif tts_vendor == 'xtts_v2':
         reference_audio_path = kwargs.get('reference_audio_path')
         language = kwargs.get('language', 'zh')
@@ -84,4 +88,5 @@ def get_tts_client(tts_vendor, character=None, **kwargs) -> TTSClient:
             else:
                 raise ImportError("XTTS v2 not available. Install with: pip install TTS==0.22.0")
     else:
-        raise ValueError(f"Unknown TTS vendor: {tts_vendor}. Supported vendors: edge, xtts_v2")
+        print(f"Unknown TTS vendor '{tts_vendor}', using fallback TTS")
+        return FallbackTTSClient(character=character)

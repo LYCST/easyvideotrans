@@ -16,7 +16,6 @@ class FallbackTTSClient(TTSClient):
         self.character = character
         self.available_services = [
             self._try_edge_tts_alternative,
-            self._try_simple_silence,
         ]
     
     def _try_edge_tts_alternative(self, text, output_path):
@@ -51,24 +50,6 @@ class FallbackTTSClient(TTSClient):
         
         return False
     
-    def _try_simple_silence(self, text, output_path):
-        """
-        生成对应时长的静音文件作为占位符
-        """
-        try:
-            # 估算文本对应的音频时长（大约每秒2-3个中文字符）
-            duration_seconds = max(1, len(text) / 2.5)
-            
-            # 生成静音音频
-            silence = AudioSegment.silent(duration=int(duration_seconds * 1000))  # 毫秒
-            silence.export(output_path, format="mp3")
-            
-            print(f"Generated silence placeholder for: {text[:50]}... (duration: {duration_seconds:.1f}s)")
-            return True
-        except Exception as e:
-            print(f"Failed to generate silence: {e}")
-            return False
-    
     def _generate_single_audio(self, text, output_path):
         """
         为单个文本生成音频，尝试多种方法
@@ -82,8 +63,8 @@ class FallbackTTSClient(TTSClient):
                 print(f"Service failed: {e}")
                 continue
         
-        print(f"All TTS services failed for text: {text[:50]}...")
-        return False
+        # 如果所有服务都失败，抛出异常
+        raise Exception(f"All TTS services failed for text: {text[:50]}...")
     
     def srt_to_voice(self, srt_file_path, output_dir):
         """
@@ -122,11 +103,11 @@ class FallbackTTSClient(TTSClient):
                         successful_count += 1
                         print(f"Successfully processed segment {index}")
                     else:
-                        print(f"MP3 file is empty or missing for segment {index}")
+                        raise Exception(f"MP3 file is empty or missing for segment {index}")
                 except Exception as e:
-                    print(f"Failed to convert MP3 to WAV for segment {index}: {e}")
+                    raise Exception(f"Failed to convert MP3 to WAV for segment {index}: {e}")
             else:
-                print(f"Failed to generate audio for segment {index}")
+                raise Exception(f"Failed to generate audio for segment {index}")
 
         print(f"TTS processing complete: {successful_count}/{len(sub_title_list)} segments successful")
 
@@ -144,9 +125,5 @@ class FallbackTTSClient(TTSClient):
         with open(srt_additional_path, "w", encoding="utf-8") as file:
             file.write(srt_content)
 
-        if successful_count > 0:
-            print("TTS conversion completed with some success")
-            return True
-        else:
-            print("TTS conversion failed completely")
-            return False
+        print("Converted srt to wav voice successfully")
+        return True

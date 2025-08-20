@@ -13,7 +13,13 @@
 - **DeepL翻译**: 缓存键格式为 `{video_id}_deepl.json`
 - **GPT翻译**: 缓存键格式为 `{video_id}_gpt_{model_name}.json`
 
-### 3. 文件结构
+### 3. TTS Fallback机制
+- **主要TTS**: Edge TTS、XTTS v2等
+- **Fallback TTS**: 当主要TTS失败时自动切换
+- **静音占位符**: 生成对应时长的静音音频
+- **工作流保护**: 确保TTS失败不会中断整个流程
+
+### 4. 文件结构
 ```
 output/
 ├── translation_cache/
@@ -21,7 +27,12 @@ output/
 │   ├── Am54LhN2NLk_deepl.json           # DeepL翻译缓存
 │   └── Am54LhN2NLk_gpt_gpt_oss_120b.json # GPT翻译缓存
 ├── Am54LhN2NLk_en_merged.srt            # 英文字幕
-└── Am54LhN2NLk_zh_merged.srt            # 中文字幕
+├── Am54LhN2NLk_zh_merged.srt            # 中文字幕
+└── Am54LhN2NLk_zh_source/               # TTS输出目录
+    ├── 1.wav
+    ├── 2.wav
+    ├── voiceMap.srt
+    └── sub.srt
 ```
 
 ## 🔧 修改的文件
@@ -48,6 +59,16 @@ output/
 
 ### 6. `app.py`
 - 修改翻译调用以使用缓存目录
+- 添加TTS fallback机制
+
+### 7. `src/service/tts/__init__.py`
+- 添加FallbackTTSClient支持
+- 修改get_tts_client函数支持fallback
+
+### 8. `src/service/tts/fallback_tts.py`
+- 实现FallbackTTSClient类
+- 提供多种TTS备选方案
+- 生成静音占位符音频
 
 ## 📊 实际效果
 
@@ -66,6 +87,7 @@ output/
 2. **重复翻译**: 直接使用缓存，跳过翻译过程
 3. **不同翻译器**: 每种翻译器独立缓存
 4. **文件修改**: 缓存仍然有效，不依赖文件内容
+5. **TTS失败**: 自动切换到fallback TTS
 
 ## 🎯 解决的问题
 
@@ -75,11 +97,13 @@ output/
 ✅ **保持一致性**: 相同video_id使用相同翻译结果
 ✅ **支持多种翻译器**: 每种翻译器独立缓存
 ✅ **文件修改兼容**: 即使源文件被修改，缓存仍然有效
+✅ **TTS容错**: Edge TTS失败时自动切换到fallback
+✅ **工作流保护**: 确保TTS失败不会中断整个流程
 
 ## 🚀 使用方法
 
 ### 正常使用
-翻译功能会自动使用缓存，无需额外配置。
+翻译和TTS功能会自动使用缓存和fallback，无需额外配置。
 
 ### 查看缓存
 ```bash
@@ -94,13 +118,19 @@ rm -rf output/translation_cache/
 ### 测试功能
 ```bash
 python demo_simple_cache.py
+python test_tts_fallback.py
 ```
 
 ## 📝 日志输出
 
-翻译时会显示缓存状态：
+### 翻译日志
 - `Translating with {translator_name} (no cache found)` - 执行翻译
 - `Using cached translation for {translator_name} (video_id: {video_id})` - 使用缓存
+
+### TTS日志
+- `Primary TTS ({tts_vendor}) failed: {error}` - 主要TTS失败
+- `Trying fallback TTS...` - 尝试fallback TTS
+- `TTS success using fallback TTS (primary {tts_vendor} failed).` - fallback成功
 
 ## 🔮 未来扩展
 
@@ -110,6 +140,7 @@ python demo_simple_cache.py
 3. 缓存统计信息
 4. 并发安全支持
 5. 缓存压缩存储
+6. 更多TTS备选方案
 
 ## ✅ 验证状态
 
@@ -120,6 +151,9 @@ python demo_simple_cache.py
 - [x] 缓存查找功能正常
 - [x] 错误处理机制完善
 - [x] 基于video_id的稳定缓存
+- [x] TTS fallback机制正常
+- [x] 静音占位符生成正确
+- [x] 工作流保护机制有效
 
 ## 💡 新缓存机制的优势
 
@@ -128,3 +162,6 @@ python demo_simple_cache.py
 3. **📝 直观易懂**: 缓存文件名直接显示video_id和翻译器
 4. **⚡ 快速切换**: 支持快速切换不同翻译器
 5. **💾 独立缓存**: 每种翻译器独立缓存，互不影响
+6. **🛡️ TTS容错**: Edge TTS失败时自动切换到fallback
+7. **🔇 静音占位符**: 生成对应时长的静音音频
+8. **🔄 工作流保护**: 确保TTS失败不会中断整个流程
