@@ -245,11 +245,30 @@ flask run --host=0.0.0.0 --debug
 | [Funasr](https://gitcode.com/alibaba-damo-academy/FunASR/)| 语言转字幕| 还没验证 | 验证后再决策 |
 | [GPT-SoVITS](https://github.com/RVC-Boss/GPT-SoVITS)| TTS | TTS输出不稳定 | 观望|
 | [ChatTTS](https://github.com/2noise/ChatTTS) | TTS | TTS输出不稳定 | 观望 |
+| [XTTS v2](https://github.com/coqui-ai/TTS) | TTS | ✅ 已集成 | 支持语音克隆 |
 | [Open AI TTS](https://platform.openai.com/docs/guides/text-to-speech) | TTS | 要钱 | 后续添加 |
 | [EmotiVoice](https://github.com/netease-youdao/EmotiVoice) | TTS | 不稳定 | 观望 |
 | [StreamSpeech](https://github.com/ictnlp/StreamSpeech) | TTS | 还没验证 | 验证后再决策|
 | 百度翻译、有道翻译、迅飞翻译 | 翻译 | 效果远不如谷歌 | 不添加 |
-| [ChatGpt](https://chatgpt.com) | 翻译 | 效果不错 | 后续添加 |
+| [ChatGpt](https://chatgpt.com) | 翻译 | ✅ 已集成 | 支持多种GPT模型 |
+
+# 翻译功能
+
+## 支持的翻译服务
+
+- **Google Translate**: 免费，无需API密钥
+- **DeepL**: 高质量翻译，需要API密钥
+- **ChatGPT**: 智能翻译，支持多种模型
+  - GPT-3.5 Turbo (推荐，性价比高)
+  - GPT-4 (高质量)
+  - GPT-4 Turbo (最新模型)
+- **本地部署**: 支持Ollama、LM Studio等本地服务
+  - 保护隐私，降低成本
+  - 支持自定义模型和API地址
+
+详细使用说明请参考：
+- [ChatGPT翻译功能使用指南](doc/chatgpt_translation_guide.md)
+- [本地部署使用指南](doc/local_deployment_guide.md)
 
 # 主要上游开源项目
 

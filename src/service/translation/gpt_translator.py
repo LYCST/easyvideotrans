@@ -10,17 +10,21 @@ GHATGPT_TERMS_FILE = "../../../configs/gpt_terms.json"
 
 
 class GPTTranslator(Translator):
-    def __init__(self, api_key, model_name="gpt-3.5-turbo-0125", proxies=None, terms_file=GHATGPT_TERMS_FILE):
+    def __init__(self, api_key, model_name="gpt-3.5-turbo-0125", base_url=None, proxies=None, terms_file=GHATGPT_TERMS_FILE):
         self.api_key = api_key
-        self.base_url = DEFAULT_URL
+        self.base_url = base_url if base_url else DEFAULT_URL
         self.model_name = model_name
         self.proxies = proxies
         self.terms = {}
         self.load_terms(terms_file)
 
     def load_terms(self, terms_file):
-        with open(terms_file, 'r', encoding='utf-8') as f:
-            self.terms = json.load(f)
+        try:
+            with open(terms_file, 'r', encoding='utf-8') as f:
+                self.terms = json.load(f)
+        except FileNotFoundError:
+            print(f"Warning: Terms file {terms_file} not found, using empty terms dictionary")
+            self.terms = {}
 
     @tenacity.retry(wait=tenacity.wait_exponential(multiplier=1, min=3, max=6),
                     stop=tenacity.stop_after_attempt(3),
@@ -31,8 +35,13 @@ class GPTTranslator(Translator):
                     max_tokens=1200):
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}"
         }
+        
+        # 只有在使用OpenAI官方API时才添加Authorization头
+        if self.base_url == DEFAULT_URL or "openai.com" in self.base_url:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        elif self.api_key and self.api_key != "":  # 本地部署可能需要API密钥
+            headers["Authorization"] = f"Bearer {self.api_key}"
 
         payload = {
             "model": self.model_name,
@@ -52,9 +61,25 @@ class GPTTranslator(Translator):
             ],
             "max_tokens": max_tokens
         }
-        response = requests.post(self.base_url + "/chat/completions", headers=headers, json=payload,
-                                 proxies=self.proxies)
-        return response.json()
+        
+        # 确保URL以/结尾
+        api_url = self.base_url.rstrip('/') + "/chat/completions"
+        
+        print(f"Making API request to: {api_url}")
+        print(f"Payload: {json.dumps(payload, ensure_ascii=False, indent=2)}")
+        
+        response = requests.post(api_url, headers=headers, json=payload, proxies=self.proxies)
+        
+        # 检查响应状态
+        if response.status_code != 200:
+            print(f"API request failed with status {response.status_code}: {response.text}")
+            raise Exception(f"API request failed: {response.status_code} - {response.text}")
+        
+        try:
+            return response.json()
+        except json.JSONDecodeError as e:
+            print(f"Failed to parse JSON response: {response.text}")
+            raise Exception(f"Invalid JSON response: {e}")
 
     def process_text(self, text, max_tokens):
         st = time.time()
@@ -79,14 +104,32 @@ class GPTTranslator(Translator):
                                    user_text=user_text,
                                    max_tokens=max_tokens)
         et = time.time()
-        text_result = results['choices'][0]['message']['content']
+        
+        # 处理Ollama API响应格式
+        if 'choices' in results and len(results['choices']) > 0:
+            text_result = results['choices'][0]['message']['content']
+        elif 'response' in results:
+            # Ollama API格式
+            text_result = results['response']
+        else:
+            # 如果都不匹配，尝试其他可能的格式
+            print(f"Warning: Unexpected API response format: {results}")
+            if isinstance(results, dict) and 'message' in results:
+                text_result = results['message'].get('content', '')
+            else:
+                text_result = str(results)
         if '```' in text_result:
             text_result = text_result.split('```')[1]
             text_result = text_result.strip().replace("\n", "").replace("translated text", "").replace("```", "")
+        
+        # 处理本地部署可能没有usage信息的情况
+        usage = results.get('usage', {})
+        model = results.get('model', self.model_name)
+        
         result_dict = {"text_result": text_result,
-                       "model": results['model'],
-                       "usage": results['usage'],
-                       "all_usage": results['usage']['prompt_tokens'] + results['usage']['completion_tokens'] * 3,
+                       "model": model,
+                       "usage": usage,
+                       "all_usage": usage.get('prompt_tokens', 0) + usage.get('completion_tokens', 0) * 3 if usage else 0,
                        'time': et - st}
         return result_dict
 

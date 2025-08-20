@@ -146,10 +146,26 @@
                         <input type="text" id="video_id" name="video_id"><br>
                         <label for="source_lang">Enter Translation source language:</label><br>
                         <input type="text" id="source_lang" name="source_lang"><br>
-                        <label for="translate_vendor">Enter Translation vendor</label><br>
-                        <input type="text" id="translate_vendor" name="translate_vendor" value="google"><br>
-                        <label for="translate_key">Enter Translation API Key</label><br>
-                        <input type="text" id="translate_key" name="translate_key"><br>
+                        <label for="translate_vendor">Translation vendor:</label><br>
+                        <select id="translate_vendor" name="translate_vendor">
+                            <option value="google">Google Translate (免费)</option>
+                            <option value="deepl">DeepL (需要API密钥)</option>
+                            <option value="gpt-3.5-turbo-0125">ChatGPT 3.5 Turbo (需要OpenAI API密钥)</option>
+                            <option value="gpt-4">ChatGPT 4 (需要OpenAI API密钥)</option>
+                            <option value="gpt-4-turbo">ChatGPT 4 Turbo (需要OpenAI API密钥)</option>
+                            <option value="gpt-local">本地部署 (自定义URL和模型)</option>
+                        </select><br>
+                        
+                        <!-- 本地部署配置 -->
+                        <div id="local_deployment_config" style="display: none;">
+                            <label for="base_url">API基础URL:</label><br>
+                            <input type="text" id="base_url" name="base_url" placeholder="http://localhost:11434/v1/"><br>
+                            <label for="model_name">模型名称:</label><br>
+                            <input type="text" id="model_name" name="model_name" placeholder="qwen2.5:7b"><br>
+                        </div>
+                        
+                        <label for="translate_key">Translation API Key (DeepL/ChatGPT需要):</label><br>
+                        <input type="text" id="translate_key" name="translate_key" placeholder="输入API密钥"><br>
                         <input type="submit" value="Translate to Chinese">
                         <a id="downloadSrtZhMergeButton" class="btn btn-primary" role="button" style="display: none;">Download
                             zh SRT</a>
@@ -185,12 +201,44 @@
                     <form action="/tts/" method="post" id="tts">
                         <label for="video_id">Enter YouTube Video ID to transcribe:</label><br>
                         <input type="text" id="video_id" name="video_id"><br>
-                        <label for="tts_vendor">Enter TTS vendor</label><br>
-                        <input type="text" id="tts_vendor" name="tts_vendor" value="edge"><br>
-                        <label for="tts_key">Enter TTS API Key</label><br>
-                        <input type="text" id="tts_key" name="tts_key"><br>
-                        <label for="tts_character">Enter TTS Character</label><br>
-                        <input type="text" id="tts_character" name="tts_character" value="zh-CN-XiaoyiNeural"><br>
+                        
+                        <label for="tts_vendor">TTS 供应商:</label><br>
+                        <select id="tts_vendor" name="tts_vendor">
+                            <option value="edge">Edge TTS (微软)</option>
+                            <option value="xtts_v2">XTTS v2 (Coqui TTS)</option>
+                        </select><br>
+                        
+                        <!-- Edge TTS 配置 -->
+                        <div id="edge_tts_config" class="tts-config">
+                            <label for="tts_character">Edge TTS 角色:</label><br>
+                            <input type="text" id="tts_character" name="tts_character" value="zh-CN-XiaoyiNeural"><br>
+                        </div>
+                        
+                        <!-- XTTS v2 配置 -->
+                        <div id="xtts_v2_config" class="tts-config" style="display: none;">
+                            <label for="reference_audio">参考音频文件 (用于语音克隆):</label><br>
+                            <input type="file" id="reference_audio" name="reference_audio" accept="audio/*"><br>
+                            <button type="button" id="upload_reference_btn" class="btn btn-secondary">上传参考音频</button><br>
+                            <span id="reference_audio_status"></span><br>
+                            
+                            <label for="language">目标语言:</label><br>
+                            <select id="language" name="language">
+                                <option value="zh">中文</option>
+                                <option value="en">英文</option>
+                                <option value="ja">日文</option>
+                                <option value="ko">韩文</option>
+                                <option value="es">西班牙文</option>
+                                <option value="fr">法文</option>
+                                <option value="de">德文</option>
+                                <option value="it">意大利文</option>
+                                <option value="pt">葡萄牙文</option>
+                                <option value="ru">俄文</option>
+                            </select><br>
+                            
+                            <label for="model_name">模型名称:</label><br>
+                            <input type="text" id="model_name" name="model_name" value="tts_models/multilingual/multi-dataset/xtts_v2"><br>
+                        </div>
+                        
                         <input type="submit" value="Generate TTS">
                         <a id="downloadTTSButton" class="btn btn-primary" role="button" style="display: none;">Download
                             TTS</a>
@@ -341,6 +389,49 @@
             });
         });
 
+        // TTS 供应商切换处理
+        $("#tts_vendor").change(function() {
+            var vendor = $(this).val();
+            $(".tts-config").hide();
+            if (vendor === "edge") {
+                $("#edge_tts_config").show();
+            } else if (vendor === "xtts_v2") {
+                $("#xtts_v2_config").show();
+            }
+        });
+
+        // 参考音频上传处理
+        $("#upload_reference_btn").click(function() {
+            var fileInput = $("#reference_audio")[0];
+            if (!fileInput.files || fileInput.files.length === 0) {
+                alert("请选择音频文件");
+                return;
+            }
+
+            var formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            $.ajax({
+                url: '/upload_reference_audio',
+                type: 'post',
+                data: formData,
+                contentType: false,
+                processData: false,
+                success: function (response) {
+                    $("#reference_audio_status").text("上传成功: " + response.filename).css("color", "green");
+                    // 将文件路径存储到隐藏字段中
+                    $("<input>").attr({
+                        type: "hidden",
+                        name: "reference_audio_path",
+                        value: response.file_path
+                    }).appendTo("#tts");
+                },
+                error: function (response) {
+                    $("#reference_audio_status").text("上传失败: " + response.responseJSON.message).css("color", "red");
+                }
+            });
+        });
+
         $("#removeBackgroundMusicForm").submit(function (e) {
             e.preventDefault();
             $.ajax({
@@ -390,6 +481,39 @@
             });
         });
 
+        // 翻译供应商选择逻辑
+        $("#translate_vendor").change(function() {
+            var vendor = $(this).val();
+            var apiKeyField = $("#translate_key");
+            var apiKeyLabel = apiKeyField.prev("label");
+            var localConfig = $("#local_deployment_config");
+            
+            // 隐藏所有特殊配置
+            localConfig.hide();
+            
+            if (vendor === "google") {
+                apiKeyField.hide();
+                apiKeyLabel.hide();
+            } else if (vendor === "gpt-local") {
+                // 本地部署配置
+                apiKeyField.show();
+                apiKeyLabel.show();
+                apiKeyField.attr("placeholder", "输入API密钥 (可选)");
+                localConfig.show();
+            } else {
+                apiKeyField.show();
+                apiKeyLabel.show();
+                if (vendor.includes("gpt")) {
+                    apiKeyField.attr("placeholder", "输入OpenAI API密钥");
+                } else if (vendor === "deepl") {
+                    apiKeyField.attr("placeholder", "输入DeepL API密钥");
+                }
+            }
+        });
+        
+        // 页面加载时触发一次
+        $("#translate_vendor").trigger("change");
+
         $("#translateToZh").submit(function (e) {
             e.preventDefault();
             $.ajax({
@@ -399,8 +523,10 @@
                 data: JSON.stringify({
                     "video_id": $("#translateToZh input[id=video_id]").val(),
                     "source_lang": $("#translateToZh input[id=source_lang]").val(),
-                    "translate_vendor": $("#translateToZh input[id=translate_vendor]").val(),
-                    "translate_key": $("#translateToZh input[id=translate_key]").val()
+                    "translate_vendor": $("#translateToZh select[id=translate_vendor]").val(),
+                    "translate_key": $("#translateToZh input[id=translate_key]").val(),
+                    "base_url": $("#translateToZh input[id=base_url]").val(),
+                    "model_name": $("#translateToZh input[id=model_name]").val()
                 }),
                 success: function (response) {
                     $("#downloadSrtZhMergeButton").attr('href', '/srt_zh_merged/' + response.video_id);
@@ -419,16 +545,31 @@
 
         $("#tts").submit(function (e) {
             e.preventDefault();
+            
+            // 构建请求数据
+            var requestData = {
+                "video_id": $("#tts input[id=video_id]").val(),
+                "tts_vendor": $("#tts select[id=tts_vendor]").val(),
+                "tts_character": $("#tts input[id=tts_character]").val()
+            };
+            
+            // 如果是 XTTS v2，添加额外参数
+            if (requestData.tts_vendor === 'xtts_v2') {
+                requestData.language = $("#tts select[id=language]").val();
+                requestData.model_name = $("#tts input[id=model_name]").val();
+                
+                // 获取参考音频路径（从隐藏字段）
+                var referenceAudioPath = $("#tts input[name=reference_audio_path]").val();
+                if (referenceAudioPath) {
+                    requestData.reference_audio_path = referenceAudioPath;
+                }
+            }
+            
             $.ajax({
                 url: '/tts',
                 type: 'post',
                 contentType: 'application/json',
-                data: JSON.stringify({
-                    "video_id": $("#tts input[id=video_id]").val(),
-                    "tts_vendor": $("#tts input[id=tts_vendor]").val(),
-                    "tts_key": $("#tts input[id=tts_key]").val(),
-                    "tts_character": $("#tts input[id=tts_character]").val()
-                }),
+                data: JSON.stringify(requestData),
                 success: function (response) {
                     $("#downloadTTSButton").attr('href', '/tts/' + response.video_id);
                     $("#downloadTTSButton").show();

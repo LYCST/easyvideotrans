@@ -393,6 +393,10 @@ def transhlate_to_zh(video_id):
     video_id = data['video_id']
     translateVendor = data['translate_vendor']
     api_key = data['translate_key']
+    
+    # 获取本地部署相关参数
+    base_url = data.get('base_url', None)
+    model_name = data.get('model_name', None)
 
     if not os.path.exists(en_srt_merged_path):
         return jsonify({"message": log_warning_return_str(
@@ -403,7 +407,7 @@ def transhlate_to_zh(video_id):
         return jsonify({"message": log_warning_return_str("Unsupported translate vendor.")}), 404
 
     try:
-        translator = get_translator(translateVendor, api_key, proxies=None)
+        translator = get_translator(translateVendor, api_key, proxies=None, base_url=base_url, model_name=model_name)
         ret = translator.translate_srt(source_file_name_and_path=en_srt_merged_path,
                                        output_file_name_and_path=zh_srt_merged_path)
         if ret:
@@ -535,7 +539,22 @@ def tts(video_id):
     srt_fn = f'{video_id}_zh_merged.srt'
     srt_path = os.path.join(output_path, srt_fn)
     tts_dir = os.path.join(output_path, video_id + "_zh_source")
-    character = data['tts_character']
+    
+    # 获取 TTS 参数
+    tts_vendor = data.get('tts_vendor')
+    character = data.get('tts_character', 'zh-CN-XiaoyiNeural')
+    reference_audio_path = data.get('reference_audio_path')
+    language = data.get('language', 'zh')
+    model_name = data.get('model_name', 'tts_models/multilingual/multi-dataset/xtts_v2')
+    
+    # 自动推断 TTS 供应商
+    if tts_vendor is None:
+        if reference_audio_path:
+            # 如果提供了参考音频路径，推断为 XTTS v2
+            tts_vendor = 'xtts_v2'
+        else:
+            # 否则默认为 Edge TTS
+            tts_vendor = 'edge'
 
     if not os.path.exists(srt_path):
         return jsonify({"message": log_warning_return_str(
@@ -546,10 +565,29 @@ def tts(video_id):
         shutil.rmtree(tts_dir)
 
     try:
-        tts_client = get_tts_client("edge", character)
+        # 根据 TTS 供应商创建客户端
+        if tts_vendor == 'xtts_v2':
+            if not reference_audio_path:
+                return jsonify({"message": log_warning_return_str(
+                    "Reference audio path is required for XTTS v2")}), 400
+            
+            if not os.path.exists(reference_audio_path):
+                return jsonify({"message": log_warning_return_str(
+                    f"Reference audio file not found: {reference_audio_path}")}), 404
+            
+            tts_client = get_tts_client(
+                tts_vendor, 
+                character=character,
+                reference_audio_path=reference_audio_path,
+                language=language,
+                model_name=model_name
+            )
+        else:
+            tts_client = get_tts_client(tts_vendor, character)
+        
         tts_client.srt_to_voice(srt_path, tts_dir)
         return jsonify({"message": log_info_return_str(
-            "tts success."),
+            f"TTS success using {tts_vendor}."),
             "video_id": video_id}), 200
     except Exception as e:
         exception = e
@@ -578,6 +616,42 @@ def tts_serve(video_id):
 
     zipf.close()
     return send_from_directory(output_path, tts_zip_fn, as_attachment=True)
+
+
+@app.route('/upload_reference_audio', methods=['POST'])
+@pytvzhen_api_request_counter
+def upload_reference_audio():
+    """上传参考音频文件用于 XTTS v2 语音克隆"""
+    output_path = app.config['OUTPUT_PATH']
+    reference_audio_dir = os.path.join(output_path, "reference_audio")
+    
+    if not os.path.exists(reference_audio_dir):
+        os.makedirs(reference_audio_dir)
+    
+    if 'file' not in request.files:
+        return jsonify({"message": log_warning_return_str("No file provided")}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"message": log_warning_return_str("No file selected")}), 400
+    
+    if file:
+        filename = secure_filename(file.filename)
+        # 确保文件名唯一
+        base_name, ext = os.path.splitext(filename)
+        counter = 1
+        while os.path.exists(os.path.join(reference_audio_dir, filename)):
+            filename = f"{base_name}_{counter}{ext}"
+            counter += 1
+        
+        file_path = os.path.join(reference_audio_dir, filename)
+        file.save(file_path)
+        
+        return jsonify({
+            "message": log_info_return_str(f"Reference audio uploaded successfully: {filename}"),
+            "file_path": file_path,
+            "filename": filename
+        }), 200
 
 
 @app.route('/video_preview', methods=['POST'])
@@ -672,4 +746,4 @@ def video_preview_serve(video_id):
 
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=10310)

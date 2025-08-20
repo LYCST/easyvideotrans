@@ -16,3 +16,4 @@ srt==3.4.1
 pydub==0.25.1
 pygtrans==1.5.3
 tenacity==8.3.0
+TTS==0.22.0

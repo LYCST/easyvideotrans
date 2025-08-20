@@ -44,8 +44,8 @@ separator = Separator(model, device, batchsize=4,
                       postprocess=False)
 
 # Setup input / output configurations
-INPUT_DIR = "workloads/static/outputs"
-OUTPUT_DIR = "workloads/static/outputs"
+INPUT_DIR = "./output"
+OUTPUT_DIR = "./output"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 

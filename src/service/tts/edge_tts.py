@@ -13,6 +13,7 @@ class EdgeTTSClient(TTSClient):
         self.character = character
 
     async def _convert_srt_to_voice_edge(self, text, path):
+        print(f"Converting text to voice: {text} , path: {path} , character: {self.character}")
         communicate = edge_tts.Communicate(text, self.character)
         await communicate.save(path)
 
