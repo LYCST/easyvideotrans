@@ -1,5 +1,6 @@
 from .edge_tts import EdgeTTSClient
 from .fallback_tts import FallbackTTSClient
+from .openai_tts import OpenAITTSClient
 from .tts_client import TTSClient
 
 # 检查 Python 版本和 TTS 兼容性
@@ -34,8 +35,9 @@ except Exception as e:
     print(f"Warning: XTTS v2 compatible version not available: {e}")
 
 __all__ = [
-    "EdgeTTSClient",
+    "EdgeTTSClient"，
     "FallbackTTSClient",
+    "OpenAITTSClient",
     "TTSClient"
 ]
 
@@ -59,6 +61,12 @@ def get_tts_client(tts_vendor, character=None, **kwargs) -> TTSClient:
     """
     if tts_vendor == 'edge':
         return EdgeTTSClient(character=character)
+    elif tts_vendor == 'openai':
+        # For OpenAI, character maps to voice parameter
+        voice = character or kwargs.get('voice', 'alloy')
+        model = kwargs.get('model', 'tts-1')
+        instructions = kwargs.get('instructions', None)
+        return OpenAITTSClient(voice=voice, model=model, instructions=instructions)
     elif tts_vendor == 'fallback':
         return FallbackTTSClient(character=character)
     elif tts_vendor == 'xtts_v2':

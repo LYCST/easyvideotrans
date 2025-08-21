@@ -29,3 +29,5 @@ output/
 .DS_Store
 faster-whisper_models/
 .pytest_cache
+
+*.key
