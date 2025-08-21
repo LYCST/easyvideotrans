@@ -31,3 +31,4 @@ faster-whisper_models/
 .pytest_cache
 
 *.key
+celery_results/
