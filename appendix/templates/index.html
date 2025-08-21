@@ -371,6 +371,27 @@
                     <form action="/video_preview/" method="post" id="videoPreview">
                         <label for="video_id">Enter YouTube Video ID to transcribe:</label><br>
                         <input type="text" id="video_id" name="video_id"><br>
+                        
+                        <!-- 硬编码字幕选项 -->
+                        <div class="form-group">
+                            <label for="hardcode_subtitles">
+                                <input type="checkbox" id="hardcode_subtitles" name="hardcode_subtitles" value="true">
+                                硬编码字幕到视频中
+                            </label>
+                            <small class="form-text text-muted">
+                                启用此选项会将中文字幕直接嵌入到视频中，无法关闭。默认不启用。
+                            </small>
+                        </div>
+                        
+                        <!-- 字幕换行配置 -->
+                        <div class="form-group" id="subtitle_wrapping_config" style="display: none;">
+                            <label for="max_chars_per_line">每行最大字符数:</label><br>
+                            <input type="number" id="max_chars_per_line" name="max_chars_per_line" value="30" min="10" max="50">
+                            <small class="form-text text-muted">
+                                设置字幕自动换行的字符数限制。建议值：20-35字符。
+                            </small>
+                        </div>
+                        
                         <input type="submit" value="video preview">
                         <a id="downloadViewoPreviewButton" class="btn btn-primary" role="button" style="display: none;">Download
                             Preview
@@ -815,13 +836,34 @@
             });
         });
 
+        // 字幕换行配置显示/隐藏
+        $("#hardcode_subtitles").change(function() {
+            if ($(this).is(':checked')) {
+                $("#subtitle_wrapping_config").show();
+            } else {
+                $("#subtitle_wrapping_config").hide();
+            }
+        });
+        
         $("#videoPreview").submit(function (e) {
             e.preventDefault();
+            
+            // 构建请求数据
+            var requestData = {
+                "video_id": $("#videoPreview [id=video_id]").val(),
+                "hardcode_subtitles": $("#videoPreview [id=hardcode_subtitles]").is(':checked')
+            };
+            
+            // 如果启用硬编码字幕，添加换行配置
+            if (requestData.hardcode_subtitles) {
+                requestData.max_chars_per_line = parseInt($("#videoPreview [id=max_chars_per_line]").val()) || 30;
+            }
+            
             $.ajax({
                 url: '/video_preview',
                 type: 'post',
                 contentType: 'application/json',
-                data: JSON.stringify({"video_id": $("#videoPreview [id=video_id]").val()}),
+                data: JSON.stringify(requestData),
                 success: function (response) {
                     $("#downloadViewoPreviewButton").attr('href', '/video_preview/' + response.video_id);
                     $("#downloadViewoPreviewButton").show();

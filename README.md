@@ -126,7 +126,7 @@ http://localhost:10310
 
 ### 1. 视频翻译流程
 
-1. **下载视频**: 输入 YouTube 视频 ID
+1. **下载视频**: 输入 YouTube 视频 ID（支持文件有效性检查）
 2. **提取音频**: 自动分离人声和背景音乐
 3. **语音识别**: 使用 Whisper 生成字幕
 4. **翻译字幕**: 选择翻译服务 (Google/DeepL/GPT)
@@ -168,6 +168,21 @@ http://localhost:10310
 - 本地部署
 - 支持自定义模型
 
+### 4. 视频合成
+
+#### 硬编码字幕功能
+- **默认行为**: 不硬编码字幕，使用 MoviePy 合成视频
+- **启用硬编码**: 将中文字幕直接嵌入视频中，使用 FFmpeg 处理
+- **参数**: 
+  - `hardcode_subtitles` (布尔值，默认 False)
+  - `max_chars_per_line` (整数，默认 30) - 每行最大字符数
+- **自动换行**: 支持字幕自动换行，在标点符号处智能分割
+- **优势**: 
+  - 字幕永久嵌入，无法关闭
+  - 兼容性更好，所有播放器都支持
+  - 自动换行确保字幕可读性
+  - 适合最终成品视频
+
 ## 🔧 高级配置
 
 ### GPU 配置
@@ -203,6 +218,7 @@ ENABLE_METRICS = True
 - `POST /translate_to_zh` - 翻译字幕
 - `POST /tts` - 语音合成
 - `POST /voice_connect` - 连接语音和视频
+- `POST /video_preview` - 视频预览合成（支持硬编码字幕）
 
 ### 请求示例
 
@@ -220,6 +236,19 @@ curl -X POST http://localhost:10310/tts \
     "tts_vendor": "cosyvoice2",
     "tts_character": "zh-CN-XiaoyiNeural",
     "audio_source": "video_voice"
+  }'
+
+# 视频预览（不硬编码字幕）
+curl -X POST http://localhost:10310/video_preview \
+  -H "Content-Type: application/json" \
+  -d '{"video_id": "Am54LhN2NLk"}'
+
+# 视频预览（硬编码字幕）
+curl -X POST http://localhost:10310/video_preview \
+  -H "Content-Type: application/json" \
+  -d '{
+    "video_id": "Am54LhN2NLk",
+    "hardcode_subtitles": true
   }'
 ```
 
@@ -254,6 +283,7 @@ black --check src/
 - **GPU 加速**: 使用 CUDA 加速 TTS 和音频处理
 - **异步处理**: Celery 队列处理耗时任务
 - **缓存机制**: 翻译结果缓存，避免重复请求
+- **文件验证**: 自动检测损坏的视频文件并重新下载
 - **并发控制**: 限制并发数量，避免资源过载
 
 ## 🤝 贡献

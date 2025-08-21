@@ -155,6 +155,7 @@ class GPTTranslator(Translator):
             futures = {executor.submit(self.process_text, text, max_tokens): i for i, text in enumerate(texts)}
             results = [None] * len(texts)  # 预分配结果列表
             completed_count = 0
+            failed_indices = []  # 记录失败的索引
             
             # 处理完成的任务，带超时
             try:
@@ -175,8 +176,8 @@ class GPTTranslator(Translator):
                     except Exception as e:
                         index = futures[future]
                         print(f"❌ 第 {index + 1} 个翻译请求失败: {e}")
-                        # 设置默认结果
-                        results[index] = {"text_result": texts[index], "model": self.model_name, "usage": {}, "all_usage": 0, "time": 0}
+                        # 记录失败的索引，稍后重试
+                        failed_indices.append(index)
                         completed_count += 1
                         
             except concurrent.futures.TimeoutError:
@@ -187,10 +188,68 @@ class GPTTranslator(Translator):
                         future.cancel()
                         print(f"❌ 取消未完成的翻译请求")
                 
-                # 为未完成的任务设置默认结果
+                # 记录未完成的任务索引
                 for future, index in futures.items():
                     if results[index] is None:
-                        results[index] = {"text_result": texts[index], "model": self.model_name, "usage": {}, "all_usage": 0, "time": 0}
-                        print(f"⚠️ 为第 {index + 1} 个请求设置默认结果")
+                        failed_indices.append(index)
+                        print(f"⚠️ 第 {index + 1} 个请求因超时而失败")
+            
+            # 处理失败的翻译请求，尝试重试
+            if failed_indices:
+                print(f"🔄 开始重试 {len(failed_indices)} 个失败的翻译请求...")
+                retry_results = self._retry_failed_translations(texts, failed_indices, max_tokens)
+                
+                # 更新失败的结果
+                for i, failed_index in enumerate(failed_indices):
+                    if retry_results[i]:
+                        results[failed_index] = retry_results[i]
+                        print(f"✅ 第 {failed_index + 1} 个请求重试成功")
+                    else:
+                        # 重试3次都失败了，直接使用原文
+                        original_text = texts[failed_index]
+                        results[failed_index] = {
+                            "text_result": original_text,
+                            "model": self.model_name,
+                            "usage": {},
+                            "all_usage": 0,
+                            "time": 0
+                        }
+                        print(f"❌ 第 {failed_index + 1} 个请求重试3次后仍失败，使用原文")
         
         return [result['text_result'] for result in results]
+
+    def _retry_failed_translations(self, texts, failed_indices, max_tokens, max_retries=3):
+        """
+        重试失败的翻译请求
+        
+        Args:
+            texts: 原始文本列表
+            failed_indices: 失败的索引列表
+            max_tokens: 最大token数
+            max_retries: 最大重试次数
+            
+        Returns:
+            list: 重试结果列表
+        """
+        retry_results = [None] * len(failed_indices)
+        
+        for retry_attempt in range(max_retries):
+            print(f"🔄 第 {retry_attempt + 1} 次重试...")
+            
+            for i, failed_index in enumerate(failed_indices):
+                if retry_results[i] is None:  # 只重试尚未成功的
+                    try:
+                        # 增加延迟避免频率限制
+                        import time
+                        time.sleep(1)
+                        
+                        result = self.process_text(texts[failed_index], max_tokens)
+                        retry_results[i] = result
+                        print(f"✅ 重试成功: 第 {failed_index + 1} 个请求")
+                        
+                    except Exception as e:
+                        print(f"❌ 重试失败: 第 {failed_index + 1} 个请求 - {e}")
+                        if retry_attempt == max_retries - 1:  # 最后一次重试
+                            retry_results[i] = None
+        
+        return retry_results

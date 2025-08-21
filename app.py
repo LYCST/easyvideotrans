@@ -10,6 +10,7 @@ from src.service.tts import get_tts_client
 from src.workload_client import EasyVideoTransWorkloadClient
 from src.task_manager.celery_tasks.tasks import video_preview_task
 from src.task_manager.celery_tasks.celery_utils import get_queue_length
+from src.utils.video_validator import validate_video_file
 from werkzeug.utils import secure_filename
 from pytubefix import YouTube
 from moviepy.editor import VideoFileClip
@@ -179,12 +180,46 @@ def yt_download(video_id):
     video_save_path = os.path.join(output_path, video_fn)
     video_fhd_save_path = os.path.join(output_path, video_fhd)
 
-    if os.path.exists(video_save_path) and os.path.exists(video_fhd_save_path):
-        return jsonify({"message": log_info_return_str(f"Video already exists at {video_save_path}, skip downloading."),
+    # 检查文件是否存在且有效
+    need_download_sd = True
+    need_download_hd = True
+    
+    # 检查标清视频
+    if os.path.exists(video_save_path):
+        is_valid, error_msg = validate_video_file(video_save_path)
+        if is_valid:
+            need_download_sd = False
+            app.logger.info(f"标清视频文件有效，跳过下载: {video_save_path}")
+        else:
+            app.logger.warning(f"标清视频文件无效，将重新下载: {video_save_path}, 错误: {error_msg}")
+            # 删除无效文件
+            try:
+                os.remove(video_save_path)
+                app.logger.info(f"已删除无效的标清视频文件: {video_save_path}")
+            except Exception as e:
+                app.logger.error(f"删除无效文件失败: {e}")
+    
+    # 检查高清视频
+    if os.path.exists(video_fhd_save_path):
+        is_valid, error_msg = validate_video_file(video_fhd_save_path)
+        if is_valid:
+            need_download_hd = False
+            app.logger.info(f"高清视频文件有效，跳过下载: {video_fhd_save_path}")
+        else:
+            app.logger.warning(f"高清视频文件无效，将重新下载: {video_fhd_save_path}, 错误: {error_msg}")
+            # 删除无效文件
+            try:
+                os.remove(video_fhd_save_path)
+                app.logger.info(f"已删除无效的高清视频文件: {video_fhd_save_path}")
+            except Exception as e:
+                app.logger.error(f"删除无效文件失败: {e}")
+
+    # 如果两个文件都有效，直接返回
+    if not need_download_sd and not need_download_hd:
+        return jsonify({"message": log_info_return_str(f"Video already exists and is valid at {video_save_path}, skip downloading."),
                         "video_id": video_id}), 200
 
     try:
-
         # 限制视频长度
         yt = YouTube(f'https://www.youtube.com/watch?v={video_id}', proxies=None)
         if yt.length > app.config['VIDEO_MAX_DURATION']:
@@ -192,19 +227,33 @@ def yt_download(video_id):
                 f'Video duration is too long. Please select videos with duration less than {app.config["VIDEO_MAX_DURATION"]} seconds. ')}), 400
 
         # 下载标清视频
-        if not os.path.exists(video_save_path):
+        if need_download_sd:
+            app.logger.info(f"开始下载标清视频: {video_id}")
             yt = YouTube(f'https://www.youtube.com/watch?v={video_id}', proxies=None)
             video = yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').asc().first()
             video.download(output_path=output_path, filename=video_fn)
+            
+            # 验证下载的文件
+            is_valid, error_msg = validate_video_file(video_save_path)
+            if not is_valid:
+                return jsonify({"message": log_error_return_str(
+                    f'Downloaded SD video file is invalid: {error_msg}')}), 500
 
         # 下载高清视频
-        if not os.path.exists(video_fhd_save_path):
+        if need_download_hd:
+            app.logger.info(f"开始下载高清视频: {video_id}")
             yt = YouTube(f'https://www.youtube.com/watch?v={video_id}', proxies=None)
             video = yt.streams.filter(progressive=False, file_extension='mp4').order_by('resolution').desc().first()
             video.download(output_path=output_path, filename=video_fhd)
+            
+            # 验证下载的文件
+            is_valid, error_msg = validate_video_file(video_fhd_save_path)
+            if not is_valid:
+                return jsonify({"message": log_error_return_str(
+                    f'Downloaded HD video file is invalid: {error_msg}')}), 500
 
         return jsonify({"message": log_info_return_str(
-            f"Download video {video_id} and {video_fhd} to {output_path} successfully."),
+            f"Download video {video_id} successfully."),
             "video_id": video_id}), 200
     except Exception as e:
         exception = e
@@ -741,6 +790,15 @@ def video_preview(video_id):
     video_save_path = os.path.join(output_path, f"{video_id}.mp4")
     video_fhd_save_path = os.path.join(output_path, f"{video_id}_fhd.mp4")
     video_out_path = os.path.join(output_path, f"{video_id}_preview.mp4")
+    
+    # 获取硬编码字幕参数，默认为False
+    hardcode_subtitles = data.get('hardcode_subtitles', False)
+    
+    # 获取字幕换行配置
+    max_chars_per_line = data.get('max_chars_per_line', 30)
+    
+    # 字幕文件路径
+    srt_path = os.path.join(output_path, f"{video_id}_zh_merged.srt")
 
     # 检查音频
     if (not os.path.exists(voice_connect_path)) or (not os.path.exists(audio_bg_path)):
@@ -751,6 +809,11 @@ def video_preview(video_id):
     if (not os.path.exists(video_save_path)) and (not os.path.exists(video_fhd_save_path)):
         return jsonify({"message": log_warning_return_str(
             "No video found")}), 404
+
+    # 如果启用硬编码字幕，检查字幕文件是否存在
+    if hardcode_subtitles and not os.path.exists(srt_path):
+        return jsonify({"message": log_warning_return_str(
+            f'Subtitle file {video_id}_zh_merged.srt not found for hardcoding')}), 404
 
     # 选择最佳分辨率的视频
     if os.path.exists(video_fhd_save_path):
@@ -763,11 +826,11 @@ def video_preview(video_id):
     # 生成视频预览
     if blocking:
         video_preview_task.apply_async(
-            args=(video_source_path, voice_connect_path, audio_bg_path, video_out_path)).get()
+            args=(video_source_path, voice_connect_path, audio_bg_path, video_out_path, srt_path, hardcode_subtitles, max_chars_per_line)).get()
         return jsonify({"message": log_info_return_str(
             f"Video preview {video_id} successfully rendered.")}), 200
 
-    task = video_preview_task.delay(video_source_path, voice_connect_path, audio_bg_path, video_out_path)
+    task = video_preview_task.delay(video_source_path, voice_connect_path, audio_bg_path, video_out_path, srt_path, hardcode_subtitles, max_chars_per_line)
 
     queue_length = get_queue_length('video_preview')
     return jsonify({
