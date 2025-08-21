@@ -557,7 +557,6 @@ def tts(video_id):
     srt_fn = f'{video_id}_zh_merged.srt'
     srt_path = os.path.join(output_path, srt_fn)
     tts_dir = os.path.join(output_path, video_id + "_zh_source")
-<<<<<<< HEAD
     
     # 获取 TTS 参数
     tts_vendor = data.get('tts_vendor')
@@ -610,6 +609,38 @@ def tts(video_id):
             tts_client = get_tts_client("openai", voice=voice, model=model, instructions=instructions)
         elif tts_vendor == 'edge':
             tts_client = get_tts_client("edge", character)
+        elif tts_vendor == 'cosyvoice2':
+            # Parse CosyVoice2 parameters from request data with defaults
+            model_path = data.get('model_path', 'pretrained_models/CosyVoice2-0.5B')
+            reference_audio_path = data.get('reference_audio_path')
+            # 使用 tts_character 作为 speaker_name，如果没有则使用 speaker_name
+            speaker_name = data.get('tts_character') or data.get('speaker_name', '')
+            mode = data.get('mode', 'cross_lingual')
+            instruction = data.get('instruction', '')
+            fp16 = data.get('fp16', False)
+            audio_source = data.get('audio_source', 'video_voice')
+
+            # 如果选择使用视频人声，自动查找视频的人声文件
+            if audio_source == 'video_voice' and not reference_audio_path:
+                video_voice_path = os.path.join(output_path, f'{video_id}_no_bg.wav')
+                if os.path.exists(video_voice_path):
+                    reference_audio_path = video_voice_path
+                    print(f"Using video voice as reference: {reference_audio_path}")
+                else:
+                    return jsonify({"message": log_warning_return_str(
+                        f"Video voice file not found: {video_voice_path}. Please process the video first.")}), 404
+
+            tts_client = get_tts_client(
+                "cosyvoice2",
+                model_path=model_path,
+                reference_audio_path=reference_audio_path,
+                speaker_name=speaker_name,
+                mode=mode,
+                instruction=instruction,
+                fp16=fp16
+            )
+        elif tts_vendor == 'fallback':
+            tts_client = get_tts_client("fallback", character)
         else:
              return jsonify({"message": log_warning_return_str(f"Unsupported TTS vendor: {tts_vendor}")}), 400
         

@@ -4,8 +4,11 @@ import srt
 import tenacity
 from pathlib import Path
 from openai import OpenAI
+import httpx
+from packaging import version
 from pydub import AudioSegment
 from src.service.tts.tts_client import TTSClient
+
 
 
 class OpenAITTSClient(TTSClient):
@@ -23,11 +26,28 @@ class OpenAITTSClient(TTSClient):
         if not api_key:
             raise ValueError("OPENAI_API_KEY environment variable is required for OpenAI TTS")
 
+        def _make_httpx_client():
+            proxy_url = (
+                os.getenv("HTTPS_PROXY")
+                or os.getenv("HTTP_PROXY")
+                or os.getenv("https_proxy")
+                or os.getenv("http_proxy")
+            )
+            kwargs = {"timeout": 60}
+            if proxy_url:
+                if version.parse(httpx.__version__) >= version.parse("0.28.0"):
+                    kwargs["proxy"] = proxy_url          # httpx>=0.28
+                else:
+                    kwargs["proxies"] = proxy_url        # httpx<0.28
+            return httpx.Client(**kwargs)
         # Create OpenAI client with only the API key
-        self.client = OpenAI(api_key=api_key)
+        http_client = _make_httpx_client()
+        self.client = OpenAI(api_key=api_key, http_client=http_client)
         self.voice = voice
         self.model = model
         self.instructions = instructions
+
+
 
     def _convert_text_to_voice_openai(self, text, output_path):
         """Convert text to speech using OpenAI TTS API."""

@@ -21,6 +21,19 @@ else:
     print("Warning: XTTS v2 requires Python 3.10 or higher. Current version: {}.{}".format(
         sys.version_info.major, sys.version_info.minor))
 
+# 检查 CosyVoice2 可用性
+COSYVOICE2_AVAILABLE = False
+CosyVoice2Client = None
+
+try:
+    from .cosyvoice2_tts import CosyVoice2Client
+    COSYVOICE2_AVAILABLE = True
+    print("Using CosyVoice2")
+except ImportError as e:
+    print(f"Warning: CosyVoice2 not available: {e}")
+except Exception as e:
+    print(f"Warning: CosyVoice2 not available: {e}")
+
 # 尝试导入兼容版本
 XTTS_COMPATIBLE_AVAILABLE = False
 XTTSv2CompatibleClient = None
@@ -35,7 +48,7 @@ except Exception as e:
     print(f"Warning: XTTS v2 compatible version not available: {e}")
 
 __all__ = [
-    "EdgeTTSClient"，
+    "EdgeTTSClient",
     "FallbackTTSClient",
     "OpenAITTSClient",
     "TTSClient"
@@ -45,6 +58,8 @@ if XTTS_AVAILABLE:
     __all__.append("XTTSv2Client")
 if XTTS_COMPATIBLE_AVAILABLE:
     __all__.append("XTTSv2CompatibleClient")
+if COSYVOICE2_AVAILABLE:
+    __all__.append("CosyVoice2Client")
 
 
 def get_tts_client(tts_vendor, character=None, **kwargs) -> TTSClient:
@@ -52,12 +67,19 @@ def get_tts_client(tts_vendor, character=None, **kwargs) -> TTSClient:
     获取 TTS 客户端
     
     Args:
-        tts_vendor: TTS 供应商 ('edge', 'xtts_v2', 'fallback')
+        tts_vendor: TTS 供应商 ('edge', 'openai', 'xtts_v2', 'cosyvoice2', 'fallback')
         character: 语音角色（用于 edge TTS）
         **kwargs: 其他参数
-            - reference_audio_path: 参考音频路径（用于 XTTS v2）
+            - voice: 语音类型（用于 OpenAI TTS）
+            - model: 模型名称（用于 OpenAI TTS）
+            - instructions: 指令（用于 OpenAI TTS）
+            - reference_audio_path: 参考音频路径（用于 XTTS v2 和 CosyVoice2）
             - language: 目标语言（用于 XTTS v2）
-            - model_name: 模型名称（用于 XTTS v2）
+            - model_name: 模型名称（用于 XTTS v2 和 CosyVoice2）
+            - speaker_name: 说话人名称（用于 CosyVoice2）
+            - mode: 生成模式（用于 CosyVoice2）
+            - instruction: 指令（用于 CosyVoice2）
+            - fp16: 是否使用FP16精度（用于 CosyVoice2）
     """
     if tts_vendor == 'edge':
         return EdgeTTSClient(character=character)
@@ -95,6 +117,31 @@ def get_tts_client(tts_vendor, character=None, **kwargs) -> TTSClient:
                     sys.version_info.major, sys.version_info.minor))
             else:
                 raise ImportError("XTTS v2 not available. Install with: pip install TTS==0.22.0")
+    elif tts_vendor == 'cosyvoice2':
+        if not COSYVOICE2_AVAILABLE:
+            raise ImportError("CosyVoice2 not available. Please install CosyVoice2 first.")
+        
+        model_path = kwargs.get('model_path', 'pretrained_models/CosyVoice2-0.5B')
+        reference_audio_path = kwargs.get('reference_audio_path')
+        speaker_name = kwargs.get('speaker_name', '')
+        mode = kwargs.get('mode', 'zero_shot')
+        instruction = kwargs.get('instruction', '')
+        load_jit = kwargs.get('load_jit', False)
+        load_trt = kwargs.get('load_trt', False)
+        load_vllm = kwargs.get('load_vllm', False)
+        fp16 = kwargs.get('fp16', False)
+        
+        return CosyVoice2Client(
+            model_path=model_path,
+            reference_audio_path=reference_audio_path,
+            speaker_name=speaker_name,
+            mode=mode,
+            instruction=instruction,
+            load_jit=load_jit,
+            load_trt=load_trt,
+            load_vllm=load_vllm,
+            fp16=fp16
+        )
     else:
         print(f"Unknown TTS vendor '{tts_vendor}', using fallback TTS")
         return FallbackTTSClient(character=character)

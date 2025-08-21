@@ -205,13 +205,38 @@
                         <label for="tts_vendor">TTS 供应商:</label><br>
                         <select id="tts_vendor" name="tts_vendor">
                             <option value="edge">Edge TTS (微软)</option>
+                            <option value="openai">OpenAI TTS</option>
                             <option value="xtts_v2">XTTS v2 (Coqui TTS)</option>
+                            <option value="cosyvoice2">CosyVoice2 (腾讯)</option>
+                            <option value="fallback">Fallback TTS (备用)</option>
                         </select><br>
                         
                         <!-- Edge TTS 配置 -->
                         <div id="edge_tts_config" class="tts-config">
                             <label for="tts_character">Edge TTS 角色:</label><br>
                             <input type="text" id="tts_character" name="tts_character" value="zh-CN-XiaoyiNeural"><br>
+                        </div>
+                        
+                        <!-- OpenAI TTS 配置 -->
+                        <div id="openai_config" class="tts-config" style="display: none;">
+                            <label for="openai_voice">OpenAI TTS 语音类型:</label><br>
+                            <select id="openai_voice" name="openai_voice">
+                                <option value="alloy">Alloy</option>
+                                <option value="echo">Echo</option>
+                                <option value="fable">Fable</option>
+                                <option value="onyx">Onyx</option>
+                                <option value="nova">Nova</option>
+                                <option value="shimmer">Shimmer</option>
+                            </select><br>
+                            
+                            <label for="openai_model">OpenAI TTS 模型:</label><br>
+                            <select id="openai_model" name="openai_model">
+                                <option value="tts-1">TTS-1</option>
+                                <option value="tts-1-hd">TTS-1-HD</option>
+                            </select><br>
+                            
+                            <label for="openai_instructions">OpenAI TTS 指令 (可选):</label><br>
+                            <textarea id="openai_instructions" name="openai_instructions" rows="3" placeholder="例如：用缓慢、清晰的语调说话"></textarea><br>
                         </div>
                         
                         <!-- XTTS v2 配置 -->
@@ -237,6 +262,57 @@
                             
                             <label for="model_name">模型名称:</label><br>
                             <input type="text" id="model_name" name="model_name" value="tts_models/multilingual/multi-dataset/xtts_v2"><br>
+                        </div>
+                        
+                        <!-- CosyVoice2 配置 -->
+                        <div id="cosyvoice2_config" class="tts-config" style="display: none;">
+                            <label for="cosyvoice2_audio_source">参考音频来源:</label><br>
+                            <select id="cosyvoice2_audio_source" name="cosyvoice2_audio_source">
+                                <option value="upload">上传音频文件</option>
+                                <option value="video_voice" selected>使用视频原始人声</option>
+                            </select><br><br>
+                            
+                            <!-- 上传音频文件选项 -->
+                            <div id="cosyvoice2_upload_section">
+                                <label for="cosyvoice2_reference_audio">参考音频文件 (用于语音克隆):</label><br>
+                                <input type="file" id="cosyvoice2_reference_audio" name="cosyvoice2_reference_audio" accept="audio/*"><br>
+                                <button type="button" id="upload_cosyvoice2_reference_btn" class="btn btn-secondary">上传参考音频</button><br>
+                                <span id="cosyvoice2_reference_audio_status"></span><br>
+                            </div>
+                            
+                            <!-- 使用视频人声选项 -->
+                            <div id="cosyvoice2_video_voice_section" style="display: none;">
+                                <div class="alert alert-info">
+                                    <strong>自动使用视频原始人声</strong><br>
+                                    系统将自动从已处理的视频中提取人声作为参考音频，无需手动上传文件。
+                                </div>
+                            </div>
+                            
+                            <label for="cosyvoice2_speaker_name">说话人名称:</label><br>
+                            <input type="text" id="cosyvoice2_speaker_name" name="cosyvoice2_speaker_name" value="希望你以后能够做的比我还好呦。"><br>
+                            
+                            <label for="cosyvoice2_mode">生成模式:</label><br>
+                            <select id="cosyvoice2_mode" name="cosyvoice2_mode">
+                                <option value="zero_shot">零样本模式 (语音克隆)</option>
+                                <option value="cross_lingual" selected>跨语种模式</option>
+                                <option value="instruct">指令模式</option>
+                            </select><br>
+                            
+                            <label for="cosyvoice2_instruction">指令 (仅用于指令模式):</label><br>
+                            <input type="text" id="cosyvoice2_instruction" name="cosyvoice2_instruction" value="用四川话说这句话"><br>
+                            
+                            <label for="cosyvoice2_model_path">模型路径:</label><br>
+                            <input type="text" id="cosyvoice2_model_path" name="cosyvoice2_model_path" value="pretrained_models/CosyVoice2-0.5B"><br>
+                            
+                            <label for="cosyvoice2_fp16">使用FP16精度:</label><br>
+                            <input type="checkbox" id="cosyvoice2_fp16" name="cosyvoice2_fp16" value="true"><br>
+                        </div>
+                        
+                        <!-- Fallback TTS 配置 -->
+                        <div id="fallback_config" class="tts-config" style="display: none;">
+                            <label for="fallback_character">Fallback TTS 角色:</label><br>
+                            <input type="text" id="fallback_character" name="fallback_character" value="zh-CN-XiaoyiNeural"><br>
+                            <small class="text-muted">注意: Fallback TTS 是备用方案，当其他TTS服务不可用时使用</small><br>
                         </div>
                         
                         <input type="submit" value="Generate TTS">
@@ -395,12 +471,19 @@
             $(".tts-config").hide();
             if (vendor === "edge") {
                 $("#edge_tts_config").show();
+            } else if (vendor === "openai") {
+                $("#openai_config").show();
             } else if (vendor === "xtts_v2") {
                 $("#xtts_v2_config").show();
+            } else if (vendor === "cosyvoice2") {
+                $("#cosyvoice2_config").show();
+                initCosyVoice2UI(); // 初始化 CosyVoice2 界面状态
+            } else if (vendor === "fallback") {
+                $("#fallback_config").show();
             }
         });
 
-        // 参考音频上传处理
+        // 参考音频上传处理 (XTTS v2)
         $("#upload_reference_btn").click(function() {
             var fileInput = $("#reference_audio")[0];
             if (!fileInput.files || fileInput.files.length === 0) {
@@ -428,6 +511,62 @@
                 },
                 error: function (response) {
                     $("#reference_audio_status").text("上传失败: " + response.responseJSON.message).css("color", "red");
+                }
+            });
+        });
+        
+        // CosyVoice2 音频来源切换处理
+        $("#cosyvoice2_audio_source").change(function() {
+            var source = $(this).val();
+            if (source === "upload") {
+                $("#cosyvoice2_upload_section").show();
+                $("#cosyvoice2_video_voice_section").hide();
+            } else if (source === "video_voice") {
+                $("#cosyvoice2_upload_section").hide();
+                $("#cosyvoice2_video_voice_section").show();
+            }
+        });
+
+        // 初始化 CosyVoice2 界面状态
+        function initCosyVoice2UI() {
+            var source = $("#cosyvoice2_audio_source").val();
+            if (source === "upload") {
+                $("#cosyvoice2_upload_section").show();
+                $("#cosyvoice2_video_voice_section").hide();
+            } else if (source === "video_voice") {
+                $("#cosyvoice2_upload_section").hide();
+                $("#cosyvoice2_video_voice_section").show();
+            }
+        }
+
+        // CosyVoice2 参考音频上传处理
+        $("#upload_cosyvoice2_reference_btn").click(function() {
+            var fileInput = $("#cosyvoice2_reference_audio")[0];
+            if (!fileInput.files || fileInput.files.length === 0) {
+                alert("请选择音频文件");
+                return;
+            }
+
+            var formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            $.ajax({
+                url: '/upload_reference_audio',
+                type: 'post',
+                data: formData,
+                contentType: false,
+                processData: false,
+                success: function (response) {
+                    $("#cosyvoice2_reference_audio_status").text("上传成功: " + response.filename).css("color", "green");
+                    // 将文件路径存储到隐藏字段中
+                    $("<input>").attr({
+                        type: "hidden",
+                        name: "cosyvoice2_reference_audio_path",
+                        value: response.file_path
+                    }).appendTo("#tts");
+                },
+                error: function (response) {
+                    $("#cosyvoice2_reference_audio_status").text("上传失败: " + response.responseJSON.message).css("color", "red");
                 }
             });
         });
@@ -553,8 +692,14 @@
                 "tts_character": $("#tts input[id=tts_character]").val()
             };
             
+            // 如果是 OpenAI TTS，添加额外参数
+            if (requestData.tts_vendor === 'openai') {
+                requestData.voice = $("#tts select[id=openai_voice]").val();
+                requestData.model = $("#tts select[id=openai_model]").val();
+                requestData.instructions = $("#tts textarea[id=openai_instructions]").val();
+            }
             // 如果是 XTTS v2，添加额外参数
-            if (requestData.tts_vendor === 'xtts_v2') {
+            else if (requestData.tts_vendor === 'xtts_v2') {
                 requestData.language = $("#tts select[id=language]").val();
                 requestData.model_name = $("#tts input[id=model_name]").val();
                 
@@ -563,6 +708,25 @@
                 if (referenceAudioPath) {
                     requestData.reference_audio_path = referenceAudioPath;
                 }
+            }
+            // 如果是 CosyVoice2，添加额外参数
+            else if (requestData.tts_vendor === 'cosyvoice2') {
+                requestData.speaker_name = $("#tts input[id=cosyvoice2_speaker_name]").val();
+                requestData.mode = $("#tts select[id=cosyvoice2_mode]").val();
+                requestData.instruction = $("#tts input[id=cosyvoice2_instruction]").val();
+                requestData.model_path = $("#tts input[id=cosyvoice2_model_path]").val();
+                requestData.fp16 = $("#tts input[id=cosyvoice2_fp16]").is(':checked');
+                requestData.audio_source = $("#tts select[id=cosyvoice2_audio_source]").val();
+                
+                // 获取参考音频路径（从隐藏字段）
+                var referenceAudioPath = $("#tts input[name=cosyvoice2_reference_audio_path]").val();
+                if (referenceAudioPath) {
+                    requestData.reference_audio_path = referenceAudioPath;
+                }
+            }
+            // 如果是 Fallback TTS，添加额外参数
+            else if (requestData.tts_vendor === 'fallback') {
+                requestData.tts_character = $("#tts input[id=fallback_character]").val();
             }
             
             $.ajax({
