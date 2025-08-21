@@ -579,6 +579,21 @@ def tts(video_id):
     try:
         # 根据 TTS 供应商创建客户端
         if tts_vendor == 'xtts_v2':
+            # Parse XTTS v2 parameters from request data
+            language = data.get('language', 'zh')
+            model_name = data.get('model_name', 'tts_models/multilingual/multi-dataset/xtts_v2')
+            audio_source = data.get('audio_source', 'video_voice')
+            
+            # 如果选择使用视频人声，自动查找视频的人声文件
+            if audio_source == 'video_voice' and not reference_audio_path:
+                video_voice_path = os.path.join(output_path, f'{video_id}_no_bg.wav')
+                if os.path.exists(video_voice_path):
+                    reference_audio_path = video_voice_path
+                    print(f"Using video voice as reference for XTTS v2: {reference_audio_path}")
+                else:
+                    return jsonify({"message": log_warning_return_str(
+                        f"Video voice file not found: {video_voice_path}. Please process the video first.")}), 404
+            
             if not reference_audio_path:
                 return jsonify({"message": log_warning_return_str(
                     "Reference audio path is required for XTTS v2")}), 400

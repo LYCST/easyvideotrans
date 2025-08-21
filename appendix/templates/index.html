@@ -241,10 +241,27 @@
                         
                         <!-- XTTS v2 配置 -->
                         <div id="xtts_v2_config" class="tts-config" style="display: none;">
-                            <label for="reference_audio">参考音频文件 (用于语音克隆):</label><br>
-                            <input type="file" id="reference_audio" name="reference_audio" accept="audio/*"><br>
-                            <button type="button" id="upload_reference_btn" class="btn btn-secondary">上传参考音频</button><br>
-                            <span id="reference_audio_status"></span><br>
+                            <label for="xtts_v2_audio_source">参考音频来源:</label><br>
+                            <select id="xtts_v2_audio_source" name="xtts_v2_audio_source">
+                                <option value="upload">上传音频文件</option>
+                                <option value="video_voice" selected>使用视频原始人声</option>
+                            </select><br><br>
+                            
+                            <!-- 上传音频文件选项 -->
+                            <div id="xtts_v2_upload_section">
+                                <label for="reference_audio">参考音频文件 (用于语音克隆):</label><br>
+                                <input type="file" id="reference_audio" name="reference_audio" accept="audio/*"><br>
+                                <button type="button" id="upload_reference_btn" class="btn btn-secondary">上传参考音频</button><br>
+                                <span id="reference_audio_status"></span><br>
+                            </div>
+                            
+                            <!-- 使用视频人声选项 -->
+                            <div id="xtts_v2_video_voice_section" style="display: none;">
+                                <div class="alert alert-info">
+                                    <strong>自动使用视频原始人声</strong><br>
+                                    系统将自动从已处理的视频中提取人声作为参考音频，无需手动上传文件。
+                                </div>
+                            </div>
                             
                             <label for="language">目标语言:</label><br>
                             <select id="language" name="language">
@@ -475,6 +492,7 @@
                 $("#openai_config").show();
             } else if (vendor === "xtts_v2") {
                 $("#xtts_v2_config").show();
+                initXTTSv2UI(); // 初始化 XTTS v2 界面状态
             } else if (vendor === "cosyvoice2") {
                 $("#cosyvoice2_config").show();
                 initCosyVoice2UI(); // 初始化 CosyVoice2 界面状态
@@ -527,6 +545,18 @@
             }
         });
 
+        // XTTS v2 音频来源切换处理
+        $("#xtts_v2_audio_source").change(function() {
+            var source = $(this).val();
+            if (source === "upload") {
+                $("#xtts_v2_upload_section").show();
+                $("#xtts_v2_video_voice_section").hide();
+            } else if (source === "video_voice") {
+                $("#xtts_v2_upload_section").hide();
+                $("#xtts_v2_video_voice_section").show();
+            }
+        });
+
         // 初始化 CosyVoice2 界面状态
         function initCosyVoice2UI() {
             var source = $("#cosyvoice2_audio_source").val();
@@ -536,6 +566,18 @@
             } else if (source === "video_voice") {
                 $("#cosyvoice2_upload_section").hide();
                 $("#cosyvoice2_video_voice_section").show();
+            }
+        }
+
+        // 初始化 XTTS v2 界面状态
+        function initXTTSv2UI() {
+            var source = $("#xtts_v2_audio_source").val();
+            if (source === "upload") {
+                $("#xtts_v2_upload_section").show();
+                $("#xtts_v2_video_voice_section").hide();
+            } else if (source === "video_voice") {
+                $("#xtts_v2_upload_section").hide();
+                $("#xtts_v2_video_voice_section").show();
             }
         }
 
@@ -702,6 +744,7 @@
             else if (requestData.tts_vendor === 'xtts_v2') {
                 requestData.language = $("#tts select[id=language]").val();
                 requestData.model_name = $("#tts input[id=model_name]").val();
+                requestData.audio_source = $("#tts select[id=xtts_v2_audio_source]").val();
                 
                 // 获取参考音频路径（从隐藏字段）
                 var referenceAudioPath = $("#tts input[name=reference_audio_path]").val();
