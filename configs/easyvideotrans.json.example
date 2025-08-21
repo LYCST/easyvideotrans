@@ -1,0 +1,8 @@
+{
+  "OUTPUT_PATH": "./workloads/static/outputs",
+  "HOST": "0.0.0.0",
+  "PORT": 10310,
+  "VIDEO_MAX_DURATION": 3600,
+  "DEBUG": false,
+  "LOG_LEVEL": "INFO"
+}

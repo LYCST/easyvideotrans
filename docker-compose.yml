@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  # RabbitMQ 消息队列
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: easyvideotrans-rabbitmq
+    ports:
+      - "5672:5672"
+      - "10311:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # 主应用服务
+  easyvideotrans:
+    build: .
+    container_name: easyvideotrans-app
+    ports:
+      - "10310:10310"
+    environment:
+      - FLASK_ENV=production
+      - CELERY_BROKER_URL=pyamqp://guest:guest@rabbitmq:5672//
+      - CELERY_RESULT_BACKEND=file:///app/celery_results
+    volumes:
+      - app_data:/app/output
+      - app_cache:/app/translation_cache
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # GPU 工作负载服务
+  easyvideotrans-gpu:
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    container_name: easyvideotrans-gpu
+    ports:
+      - "8188:8188"
+    environment:
+      - APP_ENV=production
+      - OUTPUT_DIR=/app/workloads/static/outputs
+      - CUDA_VISIBLE_DEVICES=0
+    volumes:
+      - app_data:/app/workloads/static/outputs
+      - gpu_cache:/app/.cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    depends_on:
+      - easyvideotrans
+    restart: unless-stopped
+
+volumes:
+  rabbitmq_data:
+    driver: local
+  app_data:
+    driver: local
+  app_cache:
+    driver: local
+  gpu_cache:
+    driver: local
+
+networks:
+  default:
+    name: easyvideotrans-network

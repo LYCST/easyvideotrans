@@ -38,11 +38,11 @@ ENV CELERY_RESULT_BACKEND file:///app/celery_results
 ENV CELERY_WORKER_PREFETCH_MULTIPLIER 1
 ENV CELERY_TASK_ACKS_LATE true
 
-# Make port 8080 available to the world outside this container
-EXPOSE 8080
+# Make port 10310 available to the world outside this container
+EXPOSE 10310
 
 # Define environment variable
-ENV FLASK_RUN_PORT 8080
+ENV FLASK_RUN_PORT 10310
 ENV FLASK_APP app.py
 ENV FLASK_DEBUG 0
 
