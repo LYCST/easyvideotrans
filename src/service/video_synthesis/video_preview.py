@@ -68,8 +68,20 @@ def _create_video_with_hardcoded_subtitles(videoFileNameAndPath, voiceFileNameAn
                                           srtFileNameAndPath, outputFileNameAndPath, max_chars_per_line=30):
     """使用FFmpeg创建包含硬编码字幕的视频"""
     
+    print(f"🎬 开始硬编码字幕视频合成")
+    print(f"   原始字幕文件: {srtFileNameAndPath}")
+    print(f"   每行字符数: {max_chars_per_line}")
+    
     # 处理字幕换行
     processed_srt_path = _process_subtitle_wrapping(srtFileNameAndPath, max_chars_per_line)
+    
+    # 检查处理后的字幕文件是否存在
+    if not os.path.exists(processed_srt_path):
+        print(f"❌ 处理后的字幕文件不存在: {processed_srt_path}")
+        return False
+    
+    print(f"✅ 处理后的字幕文件: {processed_srt_path}")
+    print(f"   文件大小: {os.path.getsize(processed_srt_path)} 字节")
     
     # 构建FFmpeg命令
     command = ['ffmpeg', '-y']  # -y 表示覆盖输出文件
@@ -109,7 +121,12 @@ def _create_video_with_hardcoded_subtitles(videoFileNameAndPath, voiceFileNameAn
     
     # 视频字幕叠加（支持自动换行）
     subtitle_input = audio_count + 1
-    filter_complex.append(f"[0:v]subtitles={processed_srt_path}:force_style='FontSize=24,PrimaryColour=&Hffffff,OutlineColour=&H000000,BackColour=&H000000,Outline=2,Shadow=1,Alignment=2,MarginV=30'[v]")
+    
+    # 处理字幕文件路径，确保FFmpeg能正确识别
+    subtitle_path_for_ffmpeg = processed_srt_path.replace('\\', '/').replace(':', '\\:')
+    print(f"   字幕路径(FFmpeg): {subtitle_path_for_ffmpeg}")
+    
+    filter_complex.append(f"[0:v]subtitles={subtitle_path_for_ffmpeg}:force_style='FontSize=24,PrimaryColour=&Hffffff,OutlineColour=&H000000,BackColour=&H000000,Outline=2,Shadow=1,Alignment=2,MarginV=30'[v]")
     
     # 组合过滤器
     if filter_complex:
@@ -168,16 +185,32 @@ def _process_subtitle_wrapping(srt_file_path, max_chars_per_line=30):
     try:
         import srt
         
+        # 确保 max_chars_per_line 是整数
+        try:
+            max_chars_per_line = int(max_chars_per_line)
+        except (ValueError, TypeError):
+            max_chars_per_line = 30  # 默认值
+        
+        print(f"字幕换行处理: 文件={srt_file_path}, 每行字符数={max_chars_per_line}")
+        
         # 读取原始字幕文件
         with open(srt_file_path, 'r', encoding='utf-8') as f:
             content = f.read()
         
         # 解析字幕
         subs = list(srt.parse(content))
+        print(f"解析到 {len(subs)} 个字幕条目")
         
         # 处理每个字幕的换行
-        for sub in subs:
-            sub.content = _wrap_text(sub.content, max_chars_per_line)
+        for i, sub in enumerate(subs):
+            try:
+                original_content = sub.content
+                sub.content = _wrap_text(sub.content, max_chars_per_line)
+                if original_content != sub.content:
+                    print(f"字幕 {i+1} 已换行处理")
+            except Exception as e:
+                print(f"处理字幕 {i+1} 时出错: {e}")
+                # 继续处理其他字幕
         
         # 生成处理后的字幕文件路径
         base_name = os.path.splitext(srt_file_path)[0]
@@ -206,40 +239,75 @@ def _wrap_text(text, max_chars_per_line=30):
     Returns:
         str: 换行后的文本
     """
+    # 确保 max_chars_per_line 是整数
+    try:
+        max_chars_per_line = int(max_chars_per_line)
+    except (ValueError, TypeError):
+        max_chars_per_line = 30  # 默认值
+    
+    # 确保 text 是字符串
+    if not isinstance(text, str):
+        text = str(text)
+    
     if len(text) <= max_chars_per_line:
         return text
     
-    # 按标点符号分割
+    # 标点符号列表
     punctuation_marks = ['。', '！', '？', '；', '，', '.', '!', '?', ';', ',']
     
-    # 尝试在标点符号处换行
-    for mark in punctuation_marks:
-        if mark in text:
-            parts = text.split(mark)
-            if len(parts) > 1:
-                # 重新组合，在标点符号后添加换行
-                wrapped_parts = []
-                for i, part in enumerate(parts):
-                    if i < len(parts) - 1:  # 不是最后一部分
-                        wrapped_parts.append(part + mark + '\\N')
-                    else:
-                        wrapped_parts.append(part)
-                return ''.join(wrapped_parts)
-    
-    # 如果没有标点符号，按字符数强制换行
     lines = []
     current_line = ""
+    char_count = 0
     
-    for char in text:
+    for i, char in enumerate(text):
         current_line += char
-        if len(current_line) >= max_chars_per_line:
-            lines.append(current_line)
-            current_line = ""
+        char_count += 1
+        
+        # 检查是否需要换行
+        if char_count >= max_chars_per_line:
+            # 情况1：超过字数，且前后5个字内有标点，在标点处换行
+            found_punctuation = False
+            
+            # 向前查找5个字符内的标点
+            for j in range(max(0, i-4), i+1):
+                if j < len(text) and text[j] in punctuation_marks:
+                    # 找到标点，在标点后换行
+                    if j < i:  # 标点在当前位置之前
+                        # 重新构建当前行，在标点后换行
+                        current_line = text[:j+1]
+                        remaining_text = text[j+1:]
+                        lines.append(current_line)
+                        current_line = ""
+                        char_count = 0
+                        
+                        # 处理剩余文本
+                        for k, remaining_char in enumerate(remaining_text):
+                            current_line += remaining_char
+                            char_count += 1
+                            if char_count >= max_chars_per_line:
+                                # 如果剩余文本也超过限制，直接换行
+                                lines.append(current_line)
+                                current_line = ""
+                                char_count = 0
+                        break
+                    else:  # 标点就是当前位置
+                        lines.append(current_line)
+                        current_line = ""
+                        char_count = 0
+                        found_punctuation = True
+                        break
+            
+            # 情况2：超过字数，前后5个字没有标点，直接在超过字数的地方换行
+            if not found_punctuation:
+                lines.append(current_line)
+                current_line = ""
+                char_count = 0
     
+    # 添加最后一行
     if current_line:
         lines.append(current_line)
     
-    return '\\N'.join(lines)
+    return '\n'.join(lines)
 
 
 
