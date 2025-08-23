@@ -154,12 +154,12 @@ def _create_video_with_hardcoded_subtitles(videoFileNameAndPath, voiceFileNameAn
         result = subprocess.run(command, check=True, capture_output=True, text=True)
         print("视频合成成功完成")
         
-        # 清理临时文件
-        if processed_srt_path != srtFileNameAndPath:
-            try:
-                os.remove(processed_srt_path)
-            except:
-                pass
+        # 保留换行字幕文件用于检查（注释掉删除逻辑）
+        # if processed_srt_path != srtFileNameAndPath:
+        #     try:
+        #         os.remove(processed_srt_path)
+        #     except:
+        #         pass
         
         return True
     except subprocess.CalledProcessError as e:
@@ -230,7 +230,7 @@ def _process_subtitle_wrapping(srt_file_path, max_chars_per_line=30):
 
 def _wrap_text(text, max_chars_per_line=30):
     """
-    文本换行处理
+    文本换行处理 - 简单版本，保持英文单词完整
     
     Args:
         text: 原始文本
@@ -252,9 +252,6 @@ def _wrap_text(text, max_chars_per_line=30):
     if len(text) <= max_chars_per_line:
         return text
     
-    # 标点符号列表
-    punctuation_marks = ['。', '！', '？', '；', '，', '.', '!', '?', ';', ',']
-    
     lines = []
     current_line = ""
     char_count = 0
@@ -265,40 +262,26 @@ def _wrap_text(text, max_chars_per_line=30):
         
         # 检查是否需要换行
         if char_count >= max_chars_per_line:
-            # 情况1：超过字数，且前后5个字内有标点，在标点处换行
-            found_punctuation = False
-            
-            # 向前查找5个字符内的标点
-            for j in range(max(0, i-4), i+1):
-                if j < len(text) and text[j] in punctuation_marks:
-                    # 找到标点，在标点后换行
-                    if j < i:  # 标点在当前位置之前
-                        # 重新构建当前行，在标点后换行
-                        current_line = text[:j+1]
-                        remaining_text = text[j+1:]
-                        lines.append(current_line)
-                        current_line = ""
-                        char_count = 0
-                        
-                        # 处理剩余文本
-                        for k, remaining_char in enumerate(remaining_text):
-                            current_line += remaining_char
-                            char_count += 1
-                            if char_count >= max_chars_per_line:
-                                # 如果剩余文本也超过限制，直接换行
-                                lines.append(current_line)
-                                current_line = ""
-                                char_count = 0
-                        break
-                    else:  # 标点就是当前位置
-                        lines.append(current_line)
-                        current_line = ""
-                        char_count = 0
-                        found_punctuation = True
-                        break
-            
-            # 情况2：超过字数，前后5个字没有标点，直接在超过字数的地方换行
-            if not found_punctuation:
+            # 如果当前字符是英文单词的一部分，尝试找到单词边界
+            if char.isalpha() and i > 0 and text[i-1].isalpha():
+                # 向前查找单词开始位置
+                word_start = i
+                while word_start > 0 and text[word_start-1].isalpha():
+                    word_start -= 1
+                
+                if word_start > 0:
+                    # 在单词开始处换行
+                    current_line = text[:word_start]
+                    lines.append(current_line)
+                    current_line = text[word_start:i+1]  # 包含当前字符
+                    char_count = len(current_line)
+                else:
+                    # 无法找到单词边界，强制换行
+                    lines.append(current_line)
+                    current_line = ""
+                    char_count = 0
+            else:
+                # 不是英文单词中间，直接换行
                 lines.append(current_line)
                 current_line = ""
                 char_count = 0
