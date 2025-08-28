@@ -18,16 +18,25 @@ VIDEO_PREVIEW_TASK_DURATION = Histogram(
 
 
 @celery_app.task(bind=True)
-def video_preview_task(self, video_path, voice_path, audio_bg_path, video_out_path, srt_path=None, hardcode_subtitles=False, max_chars_per_line=30):
+def video_preview_task(self, video_path, voice_path, audio_bg_path, video_out_path, srt_path=None, hardcode_subtitles=False, max_chars_per_line=30, is_original_video=False):
     print(f"Invoke video preview task {self.request.id}.")
     print(f"Hardcode subtitles: {hardcode_subtitles}")
     print(f"Max chars per line: {max_chars_per_line}")
+    print(f"Generate original video: {is_original_video}")
     VIDEO_PREVIEW_TASK_INVOKED.inc()
     start_time = time.time()
 
     try:
-        _ = zhVideoPreview(None, video_path, voice_path, audio_bg_path,
-                           srt_path, video_out_path, hardcode_subtitles, max_chars_per_line)
+        if is_original_video:
+            # 生成原始视频（高清视频+原始音频）
+            print(f"Generating original video: {video_path} + {voice_path} -> {video_out_path}")
+            _ = zhVideoPreview(None, video_path, voice_path, audio_bg_path,
+                               srt_path, video_out_path, hardcode_subtitles, max_chars_per_line)
+        else:
+            # 生成预览视频（高清视频+TTS音频+背景音乐）
+            print(f"Generating preview video: {video_path} + {voice_path} + {audio_bg_path} -> {video_out_path}")
+            _ = zhVideoPreview(None, video_path, voice_path, audio_bg_path,
+                               srt_path, video_out_path, hardcode_subtitles, max_chars_per_line)
     except SoftTimeLimitExceeded as soft_exception:
         VIDEO_PREVIEW_TASK_SOFT_TIMEOUT.inc()
         print(f"Invoke video preview task {self.request.id} failed with soft timeout: {soft_exception}")

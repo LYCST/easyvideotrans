@@ -11,13 +11,26 @@ def zhVideoPreview(logger, videoFileNameAndPath, voiceFileNameAndPath, insturmen
     Args:
         logger: 日志记录器
         videoFileNameAndPath: 视频文件路径
-        voiceFileNameAndPath: 人声音频文件路径
-        insturmentFileNameAndPath: 背景音乐文件路径
+        voiceFileNameAndPath: 人声音频文件路径（对于原始视频，这是原始音频）
+        insturmentFileNameAndPath: 背景音乐文件路径（None表示原始视频生成）
         srtFileNameAndPath: 字幕文件路径
         outputFileNameAndPath: 输出文件路径
         hardcode_subtitles: 是否硬编码字幕到视频中，默认False
         max_chars_per_line: 每行最大字符数，默认30
     """
+    
+    # 判断是否为原始视频生成（insturmentFileNameAndPath为None）
+    is_original_video = insturmentFileNameAndPath is None
+    
+    if is_original_video:
+        print(f"🎬 生成原始视频（高清视频+原始音频）")
+        print(f"   视频文件: {videoFileNameAndPath}")
+        print(f"   原始音频: {voiceFileNameAndPath}")
+    else:
+        print(f"🎬 生成预览视频（高清视频+TTS音频+背景音乐）")
+        print(f"   视频文件: {videoFileNameAndPath}")
+        print(f"   TTS音频: {voiceFileNameAndPath}")
+        print(f"   背景音乐: {insturmentFileNameAndPath}")
     
     # 如果启用硬编码字幕且字幕文件存在，使用FFmpeg处理（需要重新编码视频）
     if hardcode_subtitles and srtFileNameAndPath and os.path.exists(srtFileNameAndPath):

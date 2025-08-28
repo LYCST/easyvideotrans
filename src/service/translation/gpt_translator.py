@@ -33,6 +33,7 @@ class GPTTranslator(Translator):
             self.max_workers = config.get("TRANSLATION_MAX_WORKERS", 30)
             
             print(f"Translation config loaded: single_request_timeout={self.single_request_timeout}s, batch_timeout={self.batch_timeout}s, max_workers={self.max_workers}")
+            print(f"Config file path: {os.path.abspath(CONFIG_FILE)}")
             
         except FileNotFoundError:
             print(f"Warning: Config file {CONFIG_FILE} not found, using default timeout values")
@@ -111,6 +112,7 @@ class GPTTranslator(Translator):
     def process_text(self, text, max_tokens):
         st = time.time()
         
+        
         system_text = ("You are a professional subtitle translator that translates English subtitles to idiomatic "
                        "Chinese subtitles. IMPORTANT: Try to keep the translated text length similar to the original text "
                        "to maintain proper subtitle timing and synchronization.")
@@ -120,8 +122,6 @@ class GPTTranslator(Translator):
         Additionally, you need to consider some translation rules for terminology provided above.
         
         CRITICAL REQUIREMENT: The translated text should have a similar length to the original text to maintain proper subtitle timing. 
-        Original text length: {original_length} characters.
-        Try to keep the translation within ±20% of the original length ({int(original_length * 0.8)} - {int(original_length * 1.2)} characters).
         
         Below is the subtitle segment that needs to be translated:\n\n
         ```
@@ -187,6 +187,8 @@ class GPTTranslator(Translator):
             timeout = self.batch_timeout
             
         print(f"🚀 开始翻译 {len(texts)} 个文本片段，最大并发数: {max_workers}，超时时间: {timeout}秒")
+        print(f"   配置来源: max_workers={max_workers}, timeout={timeout}")
+        print(f"   当前实例配置: max_workers={self.max_workers}, batch_timeout={self.batch_timeout}")
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             # 提交所有任务
@@ -226,15 +228,18 @@ class GPTTranslator(Translator):
                         future.cancel()
                         print(f"❌ 取消未完成的翻译请求")
                 
-                # 记录未完成的任务索引
+                # 记录未完成的任务索引（避免重复添加）
                 for future, index in futures.items():
-                    if results[index] is None:
+                    if results[index] is None and index not in failed_indices:
                         failed_indices.append(index)
                         print(f"⚠️ 第 {index + 1} 个请求因超时而失败")
             
             # 处理失败的翻译请求，尝试重试
             if failed_indices:
+                # 去重并排序
+                failed_indices = sorted(list(set(failed_indices)))
                 print(f"🔄 开始重试 {len(failed_indices)} 个失败的翻译请求...")
+                print(f"   失败的索引: {failed_indices}")
                 retry_results = self._retry_failed_translations(texts, failed_indices, max_tokens)
                 
                 # 更新失败的结果
