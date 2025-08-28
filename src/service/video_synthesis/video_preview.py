@@ -19,22 +19,88 @@ def zhVideoPreview(logger, videoFileNameAndPath, voiceFileNameAndPath, insturmen
         max_chars_per_line: 每行最大字符数，默认30
     """
     
-    # 如果启用硬编码字幕且字幕文件存在，使用FFmpeg处理
+    # 如果启用硬编码字幕且字幕文件存在，使用FFmpeg处理（需要重新编码视频）
     if hardcode_subtitles and srtFileNameAndPath and os.path.exists(srtFileNameAndPath):
         return _create_video_with_hardcoded_subtitles(
             videoFileNameAndPath, voiceFileNameAndPath, insturmentFileNameAndPath, 
             srtFileNameAndPath, outputFileNameAndPath, max_chars_per_line
         )
     else:
-        # 使用原来的MoviePy方法
-        return _create_video_with_moviepy(
+        # 不硬编码字幕时使用优化的FFmpeg方法（视频流复制，只重新编码音频）
+        return _create_video_with_ffmpeg_fast(
             videoFileNameAndPath, voiceFileNameAndPath, insturmentFileNameAndPath, 
             outputFileNameAndPath
         )
 
 
+def _create_video_with_ffmpeg_fast(videoFileNameAndPath, voiceFileNameAndPath, insturmentFileNameAndPath, outputFileNameAndPath):
+    """使用FFmpeg快速创建视频（视频流复制，只重新编码音频）"""
+    
+    print(f"🎬 开始快速视频合成（视频流复制）")
+    print(f"   视频文件: {videoFileNameAndPath}")
+    print(f"   人声音频: {voiceFileNameAndPath}")
+    print(f"   背景音乐: {insturmentFileNameAndPath}")
+    
+    # 构建FFmpeg命令
+    command = ['ffmpeg', '-y']  # -y 表示覆盖输出文件
+    
+    # 输入文件
+    command.extend(['-i', videoFileNameAndPath])
+    
+    # 音频文件
+    audio_inputs = []
+    if voiceFileNameAndPath and os.path.exists(voiceFileNameAndPath):
+        command.extend(['-i', voiceFileNameAndPath])
+        audio_inputs.append(f'[1:a]')
+    
+    if insturmentFileNameAndPath and os.path.exists(insturmentFileNameAndPath):
+        command.extend(['-i', insturmentFileNameAndPath])
+        audio_inputs.append(f'[{len(audio_inputs) + 1}:a]')
+    
+    # 构建过滤器
+    filter_complex = []
+    
+    # 音频混合
+    if len(audio_inputs) > 1:
+        filter_complex.append(f"{' '.join(audio_inputs)}amix=inputs={len(audio_inputs)}[a]")
+    elif len(audio_inputs) == 1:
+        filter_complex.append(f"{audio_inputs[0]}copy[a]")
+    
+    # 组合过滤器
+    if filter_complex:
+        command.extend(['-filter_complex', ';'.join(filter_complex)])
+    
+    # 输出映射
+    command.extend(['-map', '0:v'])  # 复制视频流
+    if len(audio_inputs) > 0:
+        command.extend(['-map', '[a]'])  # 使用混合后的音频
+    
+    # 编码设置 - 视频流复制，只重新编码音频
+    command.extend([
+        '-c:v', 'copy',  # 视频流直接复制，不重新编码
+        '-c:a', 'aac',   # 音频重新编码为AAC
+        '-b:a', '192k'   # 音频比特率
+    ])
+    
+    # 输出文件
+    command.append(outputFileNameAndPath)
+    
+    try:
+        print(f"执行FFmpeg命令: {' '.join(command)}")
+        result = subprocess.run(command, check=True, capture_output=True, text=True)
+        print("快速视频合成成功完成")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"FFmpeg执行失败: {e}")
+        print(f"错误输出: {e.stderr}")
+        return False
+    except Exception as e:
+        print(f"视频合成过程中发生错误: {e}")
+        return False
+
+
 def _create_video_with_moviepy(videoFileNameAndPath, voiceFileNameAndPath, insturmentFileNameAndPath, outputFileNameAndPath):
-    """使用MoviePy创建视频（不包含硬编码字幕）"""
+    """使用MoviePy创建视频（不包含硬编码字幕）- 保留作为备用方案"""
     # 从moviepy.editor导入VideoFileClip的创建音-视频剪辑
     video_clip = VideoFileClip(videoFileNameAndPath)
 
@@ -137,13 +203,13 @@ def _create_video_with_hardcoded_subtitles(videoFileNameAndPath, voiceFileNameAn
     if len(audio_inputs) > 0:
         command.extend(['-map', '[a]'])
     
-    # 编码设置
+    # 编码设置 - 硬编码字幕时需要重新编码视频，但使用快速预设
     command.extend([
         '-c:v', 'libx264',
         '-c:a', 'aac',
         '-b:a', '192k',
-        '-preset', 'medium',
-        '-crf', '23'
+        '-preset', 'ultrafast',  # 使用最快的编码预设
+        '-crf', '28'            # 稍微降低质量以提高速度
     ])
     
     # 输出文件

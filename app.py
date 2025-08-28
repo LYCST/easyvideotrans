@@ -823,8 +823,12 @@ def video_preview(video_id):
     video_id = data['video_id']
     voice_connect_path = os.path.join(output_path, video_id + "_zh.wav")
     audio_bg_path = os.path.join(output_path, f'{video_id}_bg.wav')
-    video_save_path = os.path.join(output_path, f"{video_id}.mp4")
-    video_fhd_save_path = os.path.join(output_path, f"{video_id}_fhd.mp4")
+    
+    # 使用新的视频文件路径
+    video_hd_path = os.path.join(output_path, f"{video_id}_hd.mp4")  # 新的高清视频
+    video_legacy_path = os.path.join(output_path, f"{video_id}.mp4")  # 兼容旧的标清视频
+    video_fhd_legacy_path = os.path.join(output_path, f"{video_id}_fhd.mp4")  # 兼容旧的高清视频
+    
     video_out_path = os.path.join(output_path, f"{video_id}_preview.mp4")
     
     # 获取硬编码字幕参数，默认为False
@@ -842,20 +846,25 @@ def video_preview(video_id):
             f'Chinese Voice {video_id + "_zh.wav"} not found at {output_path}')}), 404
 
     # 检查视频
-    if (not os.path.exists(video_save_path)) and (not os.path.exists(video_fhd_save_path)):
+    if (not os.path.exists(video_hd_path)) and (not os.path.exists(video_legacy_path)) and (not os.path.exists(video_fhd_legacy_path)):
         return jsonify({"message": log_warning_return_str(
-            "No video found")}), 404
+            f"No video found. Expected one of: {video_id}_hd.mp4, {video_id}.mp4, or {video_id}_fhd.mp4")}), 404
 
     # 如果启用硬编码字幕，检查字幕文件是否存在
     if hardcode_subtitles and not os.path.exists(srt_path):
         return jsonify({"message": log_warning_return_str(
             f'Subtitle file {video_id}_zh_merged.srt not found for hardcoding')}), 404
 
-    # 选择最佳分辨率的视频
-    if os.path.exists(video_fhd_save_path):
-        video_source_path = video_fhd_save_path
+    # 选择最佳分辨率的视频（优先使用新的高清视频）
+    if os.path.exists(video_hd_path):
+        video_source_path = video_hd_path
+        app.logger.info(f"Using new HD video: {video_hd_path}")
+    elif os.path.exists(video_fhd_legacy_path):
+        video_source_path = video_fhd_legacy_path
+        app.logger.info(f"Using legacy FHD video: {video_fhd_legacy_path}")
     else:
-        video_source_path = video_save_path
+        video_source_path = video_legacy_path
+        app.logger.info(f"Using legacy SD video: {video_legacy_path}")
 
     blocking = data.get('blocking', False)
 
