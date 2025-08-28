@@ -3,10 +3,12 @@ import json
 import concurrent.futures
 import time
 import tenacity
+import os
 from .translator import Translator
 
 DEFAULT_URL = "https://api.openai.com/v1/"
 GHATGPT_TERMS_FILE = "../../../configs/gpt_terms.json"
+CONFIG_FILE = "../../../configs/easyvideotrans.json"
 
 
 class GPTTranslator(Translator):
@@ -18,6 +20,30 @@ class GPTTranslator(Translator):
         self.proxies = proxies
         self.terms = {}
         self.load_terms(terms_file)
+        self.load_config()
+    
+    def load_config(self):
+        """从配置文件加载超时设置"""
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            
+            self.single_request_timeout = config.get("TRANSLATION_SINGLE_REQUEST_TIMEOUT", 60)
+            self.batch_timeout = config.get("TRANSLATION_BATCH_TIMEOUT", 300)
+            self.max_workers = config.get("TRANSLATION_MAX_WORKERS", 30)
+            
+            print(f"Translation config loaded: single_request_timeout={self.single_request_timeout}s, batch_timeout={self.batch_timeout}s, max_workers={self.max_workers}")
+            
+        except FileNotFoundError:
+            print(f"Warning: Config file {CONFIG_FILE} not found, using default timeout values")
+            self.single_request_timeout = 60
+            self.batch_timeout = 300
+            self.max_workers = 30
+        except Exception as e:
+            print(f"Warning: Failed to load config file {CONFIG_FILE}: {e}, using default timeout values")
+            self.single_request_timeout = 60
+            self.batch_timeout = 300
+            self.max_workers = 30
     
     def get_translator_name(self):
         return f"gpt_{self.model_name.replace(':', '_').replace('-', '_')}"
@@ -71,7 +97,7 @@ class GPTTranslator(Translator):
         
         # 移除调试打印，只保留进度信息
         
-        response = requests.post(api_url, headers=headers, json=payload, proxies=self.proxies, timeout=60)
+        response = requests.post(api_url, headers=headers, json=payload, proxies=self.proxies, timeout=self.single_request_timeout)
         
         # 检查响应状态
         if response.status_code != 200:
@@ -86,11 +112,17 @@ class GPTTranslator(Translator):
         st = time.time()
         
         system_text = ("You are a professional subtitle translator that translates English subtitles to idiomatic "
-                       "Chinese subtitles.")
+                       "Chinese subtitles. IMPORTANT: Try to keep the translated text length similar to the original text "
+                       "to maintain proper subtitle timing and synchronization.")
         assistant_text = f"Here are some key terms and their translations:\n{json.dumps(self.terms, ensure_ascii=False)}"
         user_text = f"""You are a professional video subtitle translator.
         You need to translate a segment of subtitles and correct obvious word errors based on the context.
         Additionally, you need to consider some translation rules for terminology provided above.
+        
+        CRITICAL REQUIREMENT: The translated text should have a similar length to the original text to maintain proper subtitle timing. 
+        Original text length: {original_length} characters.
+        Try to keep the translation within ±20% of the original length ({int(original_length * 0.8)} - {int(original_length * 1.2)} characters).
+        
         Below is the subtitle segment that needs to be translated:\n\n
         ```
         {text}
@@ -138,16 +170,22 @@ class GPTTranslator(Translator):
                        'time': et - st}
         return result_dict
 
-    def translate_en_to_zh(self, texts, max_tokens=1200, max_workers=30, timeout=300):
+    def translate_en_to_zh(self, texts, max_tokens=1200, max_workers=None, timeout=None):
         """
         翻译英文文本到中文
         
         Args:
             texts: 要翻译的文本列表
             max_tokens: 最大token数
-            max_workers: 最大并发工作线程数
-            timeout: 超时时间（秒），默认5分钟
+            max_workers: 最大并发工作线程数（如果为None，使用配置文件中的值）
+            timeout: 超时时间（秒）（如果为None，使用配置文件中的值）
         """
+        # 使用配置文件中的默认值
+        if max_workers is None:
+            max_workers = self.max_workers
+        if timeout is None:
+            timeout = self.batch_timeout
+            
         print(f"🚀 开始翻译 {len(texts)} 个文本片段，最大并发数: {max_workers}，超时时间: {timeout}秒")
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
