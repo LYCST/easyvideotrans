@@ -173,6 +173,7 @@ def audio_transcribe(file_path, output_filepaths):
 
     try:
         en_srt_path, en_srt_merged_path = output_filepaths
+        
         transcribe_audio_en(app.logger, path=file_path, modelName="medium", language="en",
                             srtFilePathAndName=en_srt_path)
         srt_sentense_merge(app.logger, en_srt_path, en_srt_merged_path)
@@ -182,7 +183,7 @@ def audio_transcribe(file_path, output_filepaths):
         CURRENT_INFERENCE.dec()  # Decrement the gauge
         response = {
             "message": "Transcribe successful.",
-            "transcribe_duration_seconds": duration,
+            "transcribe_duration_seconds": duration
         }
         return jsonify(response), 200
     except Exception as e:

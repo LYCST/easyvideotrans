@@ -532,6 +532,70 @@ def srt_en_merged_serve(video_id):
         f'Transcribed English SRT {en_srt_merged_fn} not found at {en_srt_merged_path}')}), 404
 
 
+@app.route('/generate_bilingual_srt', methods=['POST'])
+@pytvzhen_api_request_counter
+@require_video_id_from_post_request
+def generate_bilingual_srt(video_id):
+    """生成中英文双语字幕"""
+    output_path = app.config['OUTPUT_PATH']
+    
+    # 字幕文件路径
+    en_srt_merged_fn = f'{video_id}_en_merged.srt'
+    zh_srt_merged_fn = f'{video_id}_zh_merged.srt'
+    bilingual_srt_fn = f'{video_id}_bilingual.srt'
+    
+    en_srt_merged_path = os.path.join(output_path, en_srt_merged_fn)
+    zh_srt_merged_path = os.path.join(output_path, zh_srt_merged_fn)
+    bilingual_srt_path = os.path.join(output_path, bilingual_srt_fn)
+    
+    # 检查双语字幕是否已存在
+    if os.path.exists(bilingual_srt_path):
+        return jsonify({"message": log_info_return_str(
+            f"Bilingual SRT {bilingual_srt_fn} already exists at {bilingual_srt_path}"),
+            "video_id": video_id}), 200
+    
+    # 检查英文和中文字幕是否存在
+    if not os.path.exists(en_srt_merged_path):
+        return jsonify({"message": log_warning_return_str(
+            f'English SRT {en_srt_merged_fn} not found at {en_srt_merged_path}')}), 404
+    
+    if not os.path.exists(zh_srt_merged_path):
+        return jsonify({"message": log_warning_return_str(
+            f'Chinese SRT {zh_srt_merged_fn} not found at {zh_srt_merged_path}')}), 404
+    
+    try:
+        # 生成双语字幕
+        success = _merge_bilingual_srt(en_srt_merged_path, zh_srt_merged_path, bilingual_srt_path)
+        
+        if success:
+            return jsonify({"message": log_info_return_str(
+                f"Generated bilingual SRT {bilingual_srt_fn} successfully."),
+                "video_id": video_id}), 200
+        else:
+            return jsonify({"message": log_error_return_str(
+                f"Failed to generate bilingual SRT {bilingual_srt_fn}")}), 500
+            
+    except Exception as e:
+        return jsonify({"message": log_error_return_str(
+            f'An error occurred while generating bilingual SRT: {str(e)}')}), 500
+
+
+@app.route('/srt_bilingual/<video_id>', methods=['GET'])
+@pytvzhen_api_request_counter
+def srt_bilingual_serve(video_id):
+    """下载双语字幕文件"""
+    output_path = app.config['OUTPUT_PATH']
+    
+    bilingual_srt_fn = f'{video_id}_bilingual.srt'
+    bilingual_srt_path = os.path.join(output_path, bilingual_srt_fn)
+    
+    if os.path.exists(bilingual_srt_path):
+        return send_from_directory(output_path, bilingual_srt_fn, as_attachment=True)
+    
+    return jsonify({"message": log_warning_return_str(
+        f'Bilingual SRT {bilingual_srt_fn} not found at {bilingual_srt_path}')}), 404
+
+
 @app.route('/translated_zh_upload', methods=['POST'])
 @pytvzhen_api_request_counter
 def translated_zh_upload():
@@ -838,13 +902,19 @@ def video_preview(video_id):
     # 获取字幕换行配置
     max_chars_per_line = data.get('max_chars_per_line', 30)
     
+    # 获取字幕类型参数
+    subtitle_type = data.get('subtitle_type', 'chinese')  # 'chinese', 'bilingual'
+    
     # 兼容旧的参数
     generate_original = data.get('generate_original', False)
     if generate_original:
         render_type = 'original'
     
     # 字幕文件路径
-    srt_path = os.path.join(output_path, f"{video_id}_zh_merged.srt")
+    if subtitle_type == 'bilingual':
+        srt_path = os.path.join(output_path, f"{video_id}_bilingual.srt")
+    else:
+        srt_path = os.path.join(output_path, f"{video_id}_zh_merged.srt")
 
     # 检查视频
     if (not os.path.exists(video_hd_path)) and (not os.path.exists(video_legacy_path)) and (not os.path.exists(video_fhd_legacy_path)):
@@ -874,8 +944,9 @@ def video_preview(video_id):
         
         # 如果启用硬编码字幕，检查字幕文件是否存在
         if hardcode_subtitles and not os.path.exists(srt_path):
+            subtitle_file = f"{video_id}_bilingual.srt" if subtitle_type == 'bilingual' else f"{video_id}_zh_merged.srt"
             return jsonify({"message": log_warning_return_str(
-                f'Subtitle file {video_id}_zh_merged.srt not found for hardcoding')}), 404
+                f'Subtitle file {subtitle_file} not found for hardcoding')}), 404
         
         # 生成预览视频任务
         video_preview_path = os.path.join(output_path, f"{video_id}_preview.mp4")
@@ -1083,6 +1154,64 @@ def upload_subtitles(video_id):
     except Exception as e:
         return jsonify({"message": log_warning_return_str(
             f"Failed to save subtitle file: {str(e)}")}), 500
+
+
+def _merge_bilingual_srt(en_srt_path, zh_srt_path, output_path):
+    """
+    合并英文和中文字幕为双语字幕
+    
+    Args:
+        en_srt_path: 英文字幕文件路径
+        zh_srt_path: 中文字幕文件路径
+        output_path: 输出双语字幕文件路径
+        
+    Returns:
+        bool: 是否成功
+    """
+    try:
+        import srt
+        
+        # 读取英文字幕
+        with open(en_srt_path, 'r', encoding='utf-8') as f:
+            en_content = f.read()
+        en_subs = list(srt.parse(en_content))
+        
+        # 读取中文字幕
+        with open(zh_srt_path, 'r', encoding='utf-8') as f:
+            zh_content = f.read()
+        zh_subs = list(srt.parse(zh_content))
+        
+        # 检查字幕数量是否匹配
+        if len(en_subs) != len(zh_subs):
+            app.logger.warning(f"Subtitle count mismatch: English={len(en_subs)}, Chinese={len(zh_subs)}")
+            # 使用较少的字幕数量
+            min_count = min(len(en_subs), len(zh_subs))
+            en_subs = en_subs[:min_count]
+            zh_subs = zh_subs[:min_count]
+        
+        # 合并字幕
+        bilingual_subs = []
+        for i, (en_sub, zh_sub) in enumerate(zip(en_subs, zh_subs)):
+            # 使用英文字幕的时间轴，中文在上，英文在下
+            bilingual_sub = srt.Subtitle(
+                index=i + 1,
+                start=en_sub.start,
+                end=en_sub.end,
+                content=f"{zh_sub.content}\n{en_sub.content}"
+            )
+            bilingual_subs.append(bilingual_sub)
+        
+        # 写入双语字幕文件
+        bilingual_content = srt.compose(bilingual_subs)
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(bilingual_content)
+        
+        app.logger.info(f"Generated bilingual SRT with {len(bilingual_subs)} entries")
+        return True
+        
+    except Exception as e:
+        app.logger.error(f"Failed to merge bilingual SRT: {e}")
+        return False
 
 
 if __name__ == '__main__':

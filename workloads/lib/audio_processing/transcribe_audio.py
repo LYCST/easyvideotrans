@@ -51,8 +51,10 @@ def transcribe_audio_en(logger, path, modelName="base.en", language="en", srtFil
     # 非静音检测阈值，单位为分贝，越小越严格
     NOT_SILENCE_THRESHOLD_DB = -30
 
-    END_INTERPUNCTION = ["…", ".", "!", "?", ";"]
+    # 简单的句末标点分割策略
+    END_PUNCTUATION = ["…", ".", "!", "?", ";"]  # 句末标点（必须分割）
     NUMBER_CHARACTERS = "0123456789"
+    
     # 确保简体中文
     initial_prompt = None
     if language == "zh":
@@ -76,14 +78,19 @@ def transcribe_audio_en(logger, path, modelName="base.en", language="en", srtFil
             finalWord = word.word.strip()
             subtitle.end = datetime.timedelta(seconds=word.end)
 
-            # 一句结束。但是要特别排除小数点被误认为是一句结尾的情况。
-            if (finalWord[-1] in END_INTERPUNCTION) and not (len(finalWord) > 1 and finalWord[-2] in NUMBER_CHARACTERS):
+            # 只在句末标点处分割，不考虑长度
+            should_split = False
+            if (finalWord[-1] in END_PUNCTUATION) and not (len(finalWord) > 1 and finalWord[-2] in NUMBER_CHARACTERS):
+                should_split = True
+                logger.info(f"Split at end punctuation: '{finalWord[-1]}'")
+
+            if should_split:
                 pushWord = " " + finalWord
                 subtitle.content += pushWord
                 subs.append(subtitle)
+                logger.info(f"Split subtitle at word '{finalWord}'")
                 index += 1
                 subtitle = None
-
             else:
                 if subtitle.content == "":
                     subtitle.content = finalWord

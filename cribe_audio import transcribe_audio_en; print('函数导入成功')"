@@ -1,0 +1,5 @@
+[33m248e1f4[m xtts v2 (Coqui TTS)
+[33mea22028[m[33m ([m[1;31morigin-yc/master-yc[m[33m)[m Merge branch 'master' into master-yc
+[33m93dbd65[m Add translation cache and improve TTS error handling
+[33m12667f9[m Add translation cache and improve TTS error handling
+[33m1d96c46[m[33m ([m[1;31morigin/master[m[33m, [m[1;31morigin/HEAD[m[33m)[m feat: uv dependency management & open-ai tts (#51)
