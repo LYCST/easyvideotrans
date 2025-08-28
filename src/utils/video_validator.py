@@ -30,7 +30,7 @@ def is_video_file_valid(video_path: str) -> Tuple[bool, Optional[str]]:
 
 def _check_video_with_ffmpeg(video_path: str) -> Tuple[bool, Optional[str]]:
     """
-    使用FFmpeg检查视频文件完整性
+    使用FFmpeg检查视频文件完整性（只检查最后10秒）
     
     Args:
         video_path: 视频文件路径
@@ -39,10 +39,14 @@ def _check_video_with_ffmpeg(video_path: str) -> Tuple[bool, Optional[str]]:
         Tuple[bool, Optional[str]]: (是否有效, 错误信息)
     """
     try:
-        # 使用FFmpeg检查视频文件，不输出任何内容
+        # 使用FFmpeg检查视频文件的最后10秒，不输出任何内容
+        # -ss -10: 从倒数第10秒开始
+        # -t 10: 检查10秒
         cmd = [
             'ffmpeg',
             '-v', 'quiet',  # 静默模式
+            '-ss', '-10',   # 从倒数第10秒开始
+            '-t', '10',     # 检查10秒
             '-i', video_path,
             '-f', 'null',
             '-'
@@ -52,7 +56,7 @@ def _check_video_with_ffmpeg(video_path: str) -> Tuple[bool, Optional[str]]:
             cmd,
             capture_output=True,
             text=True,
-            timeout=30  # 30秒超时
+            timeout=15  # 减少超时时间，因为只检查10秒
         )
         
         if result.returncode == 0:
@@ -62,7 +66,7 @@ def _check_video_with_ffmpeg(video_path: str) -> Tuple[bool, Optional[str]]:
             return False, error_msg
             
     except subprocess.TimeoutExpired:
-        return False, "FFmpeg检查超时"
+        return False, "FFmpeg检查超时（只检查最后10秒）"
     except FileNotFoundError:
         return False, "FFmpeg未安装或不在PATH中"
     except Exception as e:

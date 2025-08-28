@@ -81,11 +81,23 @@ def main():
     print("🔍 字幕文件检查工具")
     print("=" * 60)
     
+    # 加载配置文件获取输出路径
+    try:
+        import json
+        with open("./configs/easyvideotrans.json", "r") as f:
+            config = json.load(f)
+        output_dir = config.get("OUTPUT_PATH", "/home/shuzuan/temp/output")
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        output_dir = "/home/shuzuan/temp/output"
+        print(f"Warning: Could not load config file, using default output_dir: {output_dir}")
+    
+    print(f"📁 使用输出目录: {output_dir}")
+    
     # 检查常见的换行字幕文件
     common_files = [
-        "./output/Am54LhN2NLk_zh_merged_wrapped.srt",
-        "./output/Am54LhN2NLk_zh_merged.srt",
-        "./output/Am54LhN2NLk_en_merged.srt"
+        os.path.join(output_dir, "Am54LhN2NLk_zh_merged_wrapped.srt"),
+        os.path.join(output_dir, "Am54LhN2NLk_zh_merged.srt"),
+        os.path.join(output_dir, "Am54LhN2NLk_en_merged.srt")
     ]
     
     for file_path in common_files:
@@ -95,7 +107,6 @@ def main():
     
     # 查找所有换行字幕文件
     print("\n🔍 查找所有换行字幕文件...")
-    output_dir = "./output"
     if os.path.exists(output_dir):
         for file in os.listdir(output_dir):
             if file.endswith("_wrapped.srt"):

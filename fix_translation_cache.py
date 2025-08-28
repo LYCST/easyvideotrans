@@ -9,7 +9,7 @@ import json
 import sys
 from pathlib import Path
 
-def check_translation_cache(video_id, cache_dir="./output/translation_cache"):
+def check_translation_cache(video_id, cache_dir="/home/shuzuan/temp/output/translation_cache"):
     """检查翻译缓存文件"""
     cache_file = os.path.join(cache_dir, f"{video_id}_gpt_gpt_oss_120b.json")
     
@@ -46,7 +46,7 @@ def check_translation_cache(video_id, cache_dir="./output/translation_cache"):
         print(f"❌ 读取缓存文件失败: {e}")
         return False
 
-def clear_translation_cache(video_id, cache_dir="./output/translation_cache"):
+def clear_translation_cache(video_id, cache_dir="/home/shuzuan/temp/output/translation_cache"):
     """清理翻译缓存"""
     cache_file = os.path.join(cache_dir, f"{video_id}_gpt_gpt_oss_120b.json")
     

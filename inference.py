@@ -44,8 +44,8 @@ separator = Separator(model, device, batchsize=4,
                       postprocess=False)
 
 # Setup input / output configurations
-INPUT_DIR = "./output"
-OUTPUT_DIR = "./output"
+INPUT_DIR = "/home/shuzuan/temp/output"
+OUTPUT_DIR = "/home/shuzuan/temp/output"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 

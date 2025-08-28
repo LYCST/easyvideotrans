@@ -11,8 +11,8 @@ def complete_tts_fallback():
     """为缺失的TTS文件生成fallback音频"""
     print("=== 为缺失的TTS文件生成Fallback音频 ===\n")
     
-    srt_file = "output/Am54LhN2NLk_zh_merged.srt"
-    tts_dir = "output/Am54LhN2NLk_zh_source"
+    srt_file = "/home/shuzuan/temp/output/Am54LhN2NLk_zh_merged.srt"
+tts_dir = "/home/shuzuan/temp/output/Am54LhN2NLk_zh_source"
     
     print(f"📁 SRT文件: {srt_file}")
     print(f"📁 TTS目录: {tts_dir}")

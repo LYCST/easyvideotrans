@@ -173,51 +173,51 @@ def yt_thumbnail(video_id):
 @pytvzhen_api_request_counter
 @require_video_id_from_post_request
 def yt_download(video_id):
+    """下载 YouTube 视频：分离下载音频和高清视频"""
     output_path = app.config['OUTPUT_PATH']
 
-    video_fn = f"{video_id}.mp4"
-    video_fhd = f"{video_id}_fhd.mp4"
-    video_save_path = os.path.join(output_path, video_fn)
-    video_fhd_save_path = os.path.join(output_path, video_fhd)
+    # 文件命名
+    audio_fn = f"{video_id}_audio.wav"  # 音频文件
+    video_hd_fn = f"{video_id}_hd.mp4"  # 高清视频（无音频）
+    audio_save_path = os.path.join(output_path, audio_fn)
+    video_hd_save_path = os.path.join(output_path, video_hd_fn)
 
     # 检查文件是否存在且有效
-    need_download_sd = True
+    need_download_audio = True
     need_download_hd = True
     
-    # 检查标清视频
-    if os.path.exists(video_save_path):
-        is_valid, error_msg = validate_video_file(video_save_path)
-        if is_valid:
-            need_download_sd = False
-            app.logger.info(f"标清视频文件有效，跳过下载: {video_save_path}")
+    # 检查音频文件
+    if os.path.exists(audio_save_path):
+        file_size = os.path.getsize(audio_save_path)
+        if file_size > 0:
+            need_download_audio = False
+            app.logger.info(f"音频文件已存在，跳过下载: {audio_save_path} ({file_size/1024:.2f} KB)")
         else:
-            app.logger.warning(f"标清视频文件无效，将重新下载: {video_save_path}, 错误: {error_msg}")
-            # 删除无效文件
+            app.logger.warning(f"音频文件无效，将重新下载: {audio_save_path}")
             try:
-                os.remove(video_save_path)
-                app.logger.info(f"已删除无效的标清视频文件: {video_save_path}")
+                os.remove(audio_save_path)
             except Exception as e:
-                app.logger.error(f"删除无效文件失败: {e}")
+                app.logger.error(f"删除无效音频文件失败: {e}")
     
-    # 检查高清视频
-    if os.path.exists(video_fhd_save_path):
-        is_valid, error_msg = validate_video_file(video_fhd_save_path)
+    # 检查高清视频文件
+    if os.path.exists(video_hd_save_path):
+        is_valid, error_msg = validate_video_file(video_hd_save_path)
         if is_valid:
             need_download_hd = False
-            app.logger.info(f"高清视频文件有效，跳过下载: {video_fhd_save_path}")
+            app.logger.info(f"高清视频文件已存在，跳过下载: {video_hd_save_path}")
         else:
-            app.logger.warning(f"高清视频文件无效，将重新下载: {video_fhd_save_path}, 错误: {error_msg}")
-            # 删除无效文件
+            app.logger.warning(f"高清视频文件无效，将重新下载: {video_hd_save_path}, 错误: {error_msg}")
             try:
-                os.remove(video_fhd_save_path)
-                app.logger.info(f"已删除无效的高清视频文件: {video_fhd_save_path}")
+                os.remove(video_hd_save_path)
             except Exception as e:
-                app.logger.error(f"删除无效文件失败: {e}")
+                app.logger.error(f"删除无效高清视频文件失败: {e}")
 
     # 如果两个文件都有效，直接返回
-    if not need_download_sd and not need_download_hd:
-        return jsonify({"message": log_info_return_str(f"Video already exists and is valid at {video_save_path}, skip downloading."),
-                        "video_id": video_id}), 200
+    if not need_download_audio and not need_download_hd:
+        return jsonify({"message": log_info_return_str(f"Audio and HD video already exist and are valid, skip downloading."),
+                        "video_id": video_id,
+                        "audio_file": audio_fn,
+                        "hd_video_file": video_hd_fn}), 200
 
     try:
         # 限制视频长度
@@ -226,40 +226,42 @@ def yt_download(video_id):
             return jsonify({"message": log_error_return_str(
                 f'Video duration is too long. Please select videos with duration less than {app.config["VIDEO_MAX_DURATION"]} seconds. ')}), 400
 
-        # 下载标清视频
-        if need_download_sd:
-            app.logger.info(f"开始下载标清视频: {video_id}")
-            yt = YouTube(f'https://www.youtube.com/watch?v={video_id}', proxies=None)
-            video = yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').asc().first()
-            video.download(output_path=output_path, filename=video_fn)
-            
-            # 验证下载的文件
-            is_valid, error_msg = validate_video_file(video_save_path)
-            if not is_valid:
-                return jsonify({"message": log_error_return_str(
-                    f'Downloaded SD video file is invalid: {error_msg}')}), 500
+        # 下载音频
+        if need_download_audio:
+            app.logger.info(f"开始下载音频: {video_id}")
+            audio_stream = yt.streams.filter(only_audio=True).order_by('abr').desc().first()
+            if audio_stream:
+                audio_stream.download(output_path=output_path, filename=audio_fn)
+                app.logger.info(f"音频下载完成: {audio_save_path}")
+            else:
+                return jsonify({"message": log_error_return_str("No audio stream found")}), 500
 
-        # 下载高清视频
+        # 下载高清视频（无音频）
         if need_download_hd:
             app.logger.info(f"开始下载高清视频: {video_id}")
-            yt = YouTube(f'https://www.youtube.com/watch?v={video_id}', proxies=None)
-            video = yt.streams.filter(progressive=False, file_extension='mp4').order_by('resolution').desc().first()
-            video.download(output_path=output_path, filename=video_fhd)
-            
-            # 验证下载的文件
-            is_valid, error_msg = validate_video_file(video_fhd_save_path)
-            if not is_valid:
-                return jsonify({"message": log_error_return_str(
-                    f'Downloaded HD video file is invalid: {error_msg}')}), 500
+            video_stream = yt.streams.filter(progressive=False, file_extension='mp4').order_by('resolution').desc().first()
+            if video_stream:
+                video_stream.download(output_path=output_path, filename=video_hd_fn)
+                
+                # 验证下载的文件
+                is_valid, error_msg = validate_video_file(video_hd_save_path)
+                if not is_valid:
+                    return jsonify({"message": log_error_return_str(
+                        f'Downloaded HD video file is invalid: {error_msg}')}), 500
+                
+                app.logger.info(f"高清视频下载完成: {video_hd_save_path}")
+            else:
+                return jsonify({"message": log_error_return_str("No HD video stream found")}), 500
 
         return jsonify({"message": log_info_return_str(
-            f"Download video {video_id} successfully."),
-            "video_id": video_id}), 200
+            f"Download audio and HD video for {video_id} successfully."),
+            "video_id": video_id,
+            "audio_file": audio_fn,
+            "hd_video_file": video_hd_fn}), 200
     except Exception as e:
         exception = e
-
-    return jsonify({"message": log_error_return_str(
-        f'An error occurred while downloading video {video_id} to {video_save_path}: {exception}')}), 500
+        return jsonify({"message": log_error_return_str(
+            f'An error occurred while downloading {video_id}: {exception}')}), 500
 
 
 @app.route('/yt/<video_id>', methods=['GET'])
@@ -280,18 +282,21 @@ def yt_serve(video_id):
 def extra_audio(video_id):
     output_path = app.config['OUTPUT_PATH']
 
-    video_fn = f'{video_id}.mp4'
-    audio_fn = f'{video_id}.wav'
-
-    video_path, audio_path = os.path.join(output_path, video_fn), os.path.join(output_path, audio_fn)
+    # 使用下载的音频文件，而不是从视频提取
+    audio_fn = f'{video_id}_audio.wav'
+    audio_path = os.path.join(output_path, audio_fn)
 
     if os.path.exists(audio_path):
         return jsonify({"message": log_info_return_str(f"Audio already exists at {audio_path}, skip extracting."),
                         "video_id": video_id}), 200
 
+    # 如果下载的音频不存在，尝试从标清视频提取（兼容性）
+    video_fn = f'{video_id}.mp4'
+    video_path = os.path.join(output_path, video_fn)
+    
     if not os.path.exists(video_path):
-        jsonify({"message": log_warning_return_str(
-            f'Video to extract {video_fn} not found at {output_path}, please download it first')}), 404
+        return jsonify({"message": log_warning_return_str(
+            f'Downloaded audio {audio_fn} not found at {output_path}, and video {video_fn} not found, please download first')}), 404
 
     try:
         video = VideoFileClip(video_path)
@@ -311,15 +316,21 @@ def extra_audio(video_id):
 def audio_serve(video_id):
     output_path = app.config['OUTPUT_PATH']
 
-    video_fn = f'{video_id}.mp4'
-    audio_fn = f'{video_id}.wav'
-
-    _, audio_path = os.path.join(output_path, video_fn), os.path.join(output_path, audio_fn)
+    # 优先使用下载的音频文件
+    audio_fn = f'{video_id}_audio.wav'
+    audio_path = os.path.join(output_path, audio_fn)
 
     if os.path.exists(audio_path):
         return send_from_directory(output_path, audio_fn, as_attachment=True)
 
-    return jsonify({"message": log_warning_return_str(f'Extracted audio {audio_fn}  not found at {audio_path}')}), 404
+    # 兼容性：如果下载的音频不存在，尝试使用提取的音频
+    audio_fn_legacy = f'{video_id}.wav'
+    audio_path_legacy = os.path.join(output_path, audio_fn_legacy)
+
+    if os.path.exists(audio_path_legacy):
+        return send_from_directory(output_path, audio_fn_legacy, as_attachment=True)
+
+    return jsonify({"message": log_warning_return_str(f'Audio {audio_fn} or {audio_fn_legacy} not found at {output_path}')}), 404
 
 
 @app.route('/remove_audio_bg', methods=['POST'])
@@ -328,14 +339,18 @@ def audio_serve(video_id):
 def remove_audio_bg(video_id):
     output_path = app.config['OUTPUT_PATH']
 
-    video_fn = f'{video_id}.mp4'
-    audio_fn = f'{video_id}.wav'
+    # 优先使用下载的音频文件
+    audio_fn = f'{video_id}_audio.wav'
+    audio_path = os.path.join(output_path, audio_fn)
+    
+    # 如果下载的音频不存在，尝试使用提取的音频（兼容性）
+    if not os.path.exists(audio_path):
+        audio_fn = f'{video_id}.wav'
+        audio_path = os.path.join(output_path, audio_fn)
+    
     audio_no_bg_fn, audio_bg_fn = f'{video_id}_no_bg.wav', f'{video_id}_bg.wav'
-
-    _, audio_path, audio_no_bg_path, audio_bg_fn_path = (os.path.join(output_path, video_fn),
-                                                         os.path.join(output_path, audio_fn),
-                                                         os.path.join(output_path, audio_no_bg_fn),
-                                                         os.path.join(output_path, audio_bg_fn))
+    audio_no_bg_path, audio_bg_fn_path = (os.path.join(output_path, audio_no_bg_fn),
+                                         os.path.join(output_path, audio_bg_fn))
 
     if os.path.exists(audio_no_bg_path) and os.path.exists(audio_bg_fn_path):
         return jsonify({"message": log_info_return_str(
@@ -343,21 +358,42 @@ def remove_audio_bg(video_id):
             "video_id": video_id}), 200
 
     if not os.path.exists(audio_path):
-        jsonify({"message": log_warning_return_str(
-            f'Audio to remove background music for {audio_path} '
-            f'not found at {output_path}, please extract it first')}), 404
+        return jsonify({"message": log_warning_return_str(
+            f'Audio to remove background music for {audio_fn} '
+            f'not found at {output_path}, please download or extract it first')}), 404
 
     try:
         audio_bg_fn_path, audio_no_bg_fn = gpu_workload.separate_audio(audio_fn)
+        
+        # 重命名文件以匹配期望的文件名格式
+        # 从 Am54LhN2NLk_audio_bg.wav 重命名为 Am54LhN2NLk_bg.wav
+        # 从 Am54LhN2NLk_audio_no_bg.wav 重命名为 Am54LhN2NLk_no_bg.wav
+        expected_bg_fn = f'{video_id}_bg.wav'
+        expected_no_bg_fn = f'{video_id}_no_bg.wav'
+        
+        audio_bg_path = os.path.join(output_path, audio_bg_fn_path)
+        audio_no_bg_path = os.path.join(output_path, audio_no_bg_fn)
+        expected_bg_path = os.path.join(output_path, expected_bg_fn)
+        expected_no_bg_path = os.path.join(output_path, expected_no_bg_fn)
+        
+        # 重命名文件
+        if os.path.exists(audio_bg_path) and audio_bg_path != expected_bg_path:
+            os.rename(audio_bg_path, expected_bg_path)
+            app.logger.info(f"Renamed {audio_bg_fn_path} to {expected_bg_fn}")
+            
+        if os.path.exists(audio_no_bg_path) and audio_no_bg_path != expected_no_bg_path:
+            os.rename(audio_no_bg_path, expected_no_bg_path)
+            app.logger.info(f"Renamed {audio_no_bg_fn} to {expected_no_bg_fn}")
+        
         return jsonify({"message": log_info_return_str(
-            f"Remove remove background music for {audio_fn} as {audio_no_bg_fn} and {audio_bg_fn_path} successfully."),
+            f"Remove background music for {audio_fn} as {expected_no_bg_fn} and {expected_bg_fn} successfully."),
             "video_id": video_id}), 200
 
     except Exception as e:
         exception = e
 
     return jsonify({"message": log_error_return_str(
-        f'An error occurred while removing background music for {audio_fn} as {audio_no_bg_fn} and {audio_bg_fn_path}: {exception}')}), 500
+        f'An error occurred while removing background music for {audio_fn} as {expected_no_bg_fn} and {expected_bg_fn}: {exception}')}), 500
 
 
 @app.route('/audio_no_bg/<video_id>', methods=['GET'])

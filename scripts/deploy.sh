@@ -19,7 +19,7 @@ fi
 
 # 创建必要的目录
 echo "📁 创建必要的目录..."
-mkdir -p output
+mkdir -p /home/shuzuan/temp/output
 mkdir -p workloads/static/outputs
 mkdir -p translation_cache
 mkdir -p celery_results
