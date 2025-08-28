@@ -77,7 +77,8 @@ def _create_video_with_ffmpeg_fast(videoFileNameAndPath, voiceFileNameAndPath, i
     if len(audio_inputs) > 1:
         filter_complex.append(f"{' '.join(audio_inputs)}amix=inputs={len(audio_inputs)}[a]")
     elif len(audio_inputs) == 1:
-        filter_complex.append(f"{audio_inputs[0]}copy[a]")
+        # 对于单个音频，使用 aresample 确保兼容性
+        filter_complex.append(f"{audio_inputs[0]}aresample=async=1[a]")
     
     # 组合过滤器
     if filter_complex:
@@ -196,7 +197,8 @@ def _create_video_with_hardcoded_subtitles(videoFileNameAndPath, voiceFileNameAn
     if len(audio_inputs) > 1:
         filter_complex.append(f"{' '.join(audio_inputs)}amix=inputs={len(audio_inputs)}[a]")
     elif len(audio_inputs) == 1:
-        filter_complex.append(f"{audio_inputs[0]}copy[a]")
+        # 对于单个音频，使用 aresample 确保兼容性
+        filter_complex.append(f"{audio_inputs[0]}aresample=async=1[a]")
     
     # 视频字幕叠加（支持自动换行）
     subtitle_input = audio_count + 1

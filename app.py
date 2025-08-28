@@ -829,7 +829,8 @@ def video_preview(video_id):
     video_legacy_path = os.path.join(output_path, f"{video_id}.mp4")  # 兼容旧的标清视频
     video_fhd_legacy_path = os.path.join(output_path, f"{video_id}_fhd.mp4")  # 兼容旧的高清视频
     
-    video_out_path = os.path.join(output_path, f"{video_id}_preview.mp4")
+    # 获取渲染类型参数
+    render_type = data.get('render_type', 'preview')  # 'original', 'preview', 'both'
     
     # 获取硬编码字幕参数，默认为False
     hardcode_subtitles = data.get('hardcode_subtitles', False)
@@ -837,27 +838,18 @@ def video_preview(video_id):
     # 获取字幕换行配置
     max_chars_per_line = data.get('max_chars_per_line', 30)
     
-    # 获取原始视频生成参数
+    # 兼容旧的参数
     generate_original = data.get('generate_original', False)
+    if generate_original:
+        render_type = 'original'
     
     # 字幕文件路径
     srt_path = os.path.join(output_path, f"{video_id}_zh_merged.srt")
-
-    # 检查音频（只在生成预览视频时检查）
-    if not generate_original:
-        if (not os.path.exists(voice_connect_path)) or (not os.path.exists(audio_bg_path)):
-            return jsonify({"message": log_warning_return_str(
-                f'Chinese Voice {video_id + "_zh.wav"} not found at {output_path}')}), 404
 
     # 检查视频
     if (not os.path.exists(video_hd_path)) and (not os.path.exists(video_legacy_path)) and (not os.path.exists(video_fhd_legacy_path)):
         return jsonify({"message": log_warning_return_str(
             f"No video found. Expected one of: {video_id}_hd.mp4, {video_id}.mp4, or {video_id}_fhd.mp4")}), 404
-
-    # 如果启用硬编码字幕，检查字幕文件是否存在
-    if hardcode_subtitles and not os.path.exists(srt_path):
-        return jsonify({"message": log_warning_return_str(
-            f'Subtitle file {video_id}_zh_merged.srt not found for hardcoding')}), 404
 
     # 选择最佳分辨率的视频（优先使用新的高清视频）
     if os.path.exists(video_hd_path):
@@ -871,42 +863,65 @@ def video_preview(video_id):
         app.logger.info(f"Using legacy SD video: {video_legacy_path}")
 
     blocking = data.get('blocking', False)
+    tasks = []
 
-    # 根据生成类型选择输出路径和参数
-    if generate_original:
-        # 生成原始视频（高清视频+原始音频）
-        video_out_path = os.path.join(output_path, f"{video_id}_original.mp4")
-        audio_path = os.path.join(output_path, f"{video_id}_audio.wav")
+    # 根据渲染类型生成任务
+    if render_type in ['preview', 'both']:
+        # 检查预览视频所需的文件
+        if (not os.path.exists(voice_connect_path)) or (not os.path.exists(audio_bg_path)):
+            return jsonify({"message": log_warning_return_str(
+                f'Chinese Voice {video_id + "_zh.wav"} not found at {output_path}')}), 404
         
-        # 检查原始音频是否存在
+        # 如果启用硬编码字幕，检查字幕文件是否存在
+        if hardcode_subtitles and not os.path.exists(srt_path):
+            return jsonify({"message": log_warning_return_str(
+                f'Subtitle file {video_id}_zh_merged.srt not found for hardcoding')}), 404
+        
+        # 生成预览视频任务
+        video_preview_path = os.path.join(output_path, f"{video_id}_preview.mp4")
+        preview_task = video_preview_task.delay(video_source_path, voice_connect_path, audio_bg_path, video_preview_path, srt_path, hardcode_subtitles, max_chars_per_line, False)
+        tasks.append(('preview', preview_task))
+
+    if render_type in ['original', 'both']:
+        # 检查原始视频所需的文件
+        audio_path = os.path.join(output_path, f"{video_id}_audio.wav")
         if not os.path.exists(audio_path):
             return jsonify({"message": log_warning_return_str(
                 f'Original audio {video_id}_audio.wav not found at {output_path}')}), 404
         
-        # 生成原始视频
-        if blocking:
-            video_preview_task.apply_async(
-                args=(video_source_path, audio_path, None, video_out_path, None, False, max_chars_per_line, True)).get()
-            return jsonify({"message": log_info_return_str(
-                f"Original video {video_id} successfully rendered.")}), 200
+        # 生成原始视频任务
+        video_original_path = os.path.join(output_path, f"{video_id}_original.mp4")
+        original_task = video_preview_task.delay(video_source_path, audio_path, None, video_original_path, None, False, max_chars_per_line, True)
+        tasks.append(('original', original_task))
 
-        task = video_preview_task.delay(video_source_path, audio_path, None, video_out_path, None, False, max_chars_per_line, True)
-    else:
-        # 生成预览视频（高清视频+TTS音频+背景音乐）
-        if blocking:
-            video_preview_task.apply_async(
-                args=(video_source_path, voice_connect_path, audio_bg_path, video_out_path, srt_path, hardcode_subtitles, max_chars_per_line, False)).get()
-            return jsonify({"message": log_info_return_str(
-                f"Video preview {video_id} successfully rendered.")}), 200
+    # 如果是阻塞模式，等待所有任务完成
+    if blocking:
+        results = []
+        for task_type, task in tasks:
+            try:
+                task.get()  # 等待任务完成
+                results.append(f"{task_type} video")
+            except Exception as e:
+                return jsonify({"message": log_error_return_str(
+                    f"Failed to render {task_type} video: {str(e)}")}), 500
+        
+        return jsonify({"message": log_info_return_str(
+            f"Successfully rendered: {', '.join(results)}")}), 200
 
-        task = video_preview_task.delay(video_source_path, voice_connect_path, audio_bg_path, video_out_path, srt_path, hardcode_subtitles, max_chars_per_line, False)
+    # 返回任务信息
+    task_info = {}
+    for task_type, task in tasks:
+        task_info[f"{task_type}_task_id"] = task.id
 
     queue_length = get_queue_length('video_preview')
     return jsonify({
-        "message": log_info_return_str(f"Submitted video preview task {task.id}."),
-        "video_preview_task_id": task.id,
+        "message": log_info_return_str(f"Submitted video rendering tasks: {render_type}"),
+        "render_type": render_type,
+        "tasks": task_info,
         'queue_length': queue_length
     }), 202
+
+
 
 
 @app.route('/video_preview_status/<task_id>', methods=['GET'])
@@ -971,7 +986,7 @@ def video_original(video_id):
             "video_id": video_id}), 200
     
     # 调用视频预览功能生成原始视频
-    data['generate_original'] = True
+    data['render_type'] = 'original'
     return video_preview(video_id)
 
 
@@ -989,6 +1004,16 @@ def video_original_serve(video_id):
     
     return jsonify({"message": log_warning_return_str(
         f'Original video {video_original_fn} not found at {video_original_path}')}), 404
+
+
+@app.route('/video_both', methods=['POST'])
+@pytvzhen_api_request_counter
+@require_video_id_from_post_request
+def video_both(video_id):
+    """同时生成原始视频和预览视频"""
+    data = request.get_json()
+    data['render_type'] = 'both'
+    return video_preview(video_id)
 
 
 @app.route('/subtitles/<video_id>', methods=['GET'])
