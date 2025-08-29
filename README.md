@@ -122,6 +122,341 @@ celery -A src.task_manager.celery_tasks.celery_app worker --concurrency 1 -Q vid
 http://localhost:10310
 ```
 
+## 📊 API 接口文档
+
+### 基础信息
+- **基础URL**: `http://localhost:10310`
+- **内容类型**: `application/json`
+- **响应格式**: JSON
+
+### 1. 视频上传和下载
+
+#### 1.1 上传视频文件
+```bash
+curl -X POST http://localhost:10310/video_upload \
+  -F "file=@/path/to/your/video.mp4"
+```
+**参数说明**:
+- `file`: 视频文件 (支持 .mp4 格式)
+
+**响应示例**:
+```json
+{
+  "message": "Video video.mp4 uploaded as abc123_video.mp4",
+  "video_id": "abc123"
+}
+```
+
+#### 1.2 下载 YouTube 视频
+```bash
+curl -X POST http://localhost:10310/yt_download \
+  -H "Content-Type: application/json" \
+  -d '{"video_id": "Am54LhN2NLk"}'
+```
+**参数说明**:
+- `video_id`: YouTube 视频 ID
+
+**响应示例**:
+```json
+{
+  "message": "YouTube video downloaded successfully",
+  "video_id": "Am54LhN2NLk"
+}
+```
+
+#### 1.3 获取 YouTube 视频缩略图
+```bash
+curl -X POST http://localhost:10310/yt_thumbnail \
+  -H "Content-Type: application/json" \
+  -d '{"video_id": "Am54LhN2NLk"}'
+```
+
+#### 1.4 下载视频文件
+```bash
+curl -X GET http://localhost:10310/yt/Am54LhN2NLk
+```
+
+### 2. 音频处理
+
+#### 2.1 提取音频
+```bash
+curl -X POST http://localhost:10310/extra_audio \
+  -H "Content-Type: application/json" \
+  -d '{"video_id": "Am54LhN2NLk"}'
+```
+
+#### 2.2 下载音频文件
+```bash
+curl -X GET http://localhost:10310/audio/Am54LhN2NLk
+```
+
+#### 2.3 移除音频背景音乐
+```bash
+curl -X POST http://localhost:10310/remove_audio_bg \
+  -H "Content-Type: application/json" \
+  -d '{"video_id": "Am54LhN2NLk"}'
+```
+
+#### 2.4 下载人声音频
+```bash
+curl -X GET http://localhost:10310/audio_no_bg/Am54LhN2NLk
+```
+
+#### 2.5 下载背景音乐
+```bash
+curl -X GET http://localhost:10310/audio_bg/Am54LhN2NLk
+```
+
+### 3. 语音识别和字幕
+
+#### 3.1 语音识别生成字幕
+```bash
+curl -X POST http://localhost:10310/transcribe \
+  -H "Content-Type: application/json" \
+  -d '{"video_id": "Am54LhN2NLk"}'
+```
+
+#### 3.2 下载英文原始字幕
+```bash
+curl -X GET http://localhost:10310/srt_en/Am54LhN2NLk
+```
+
+#### 3.3 下载英文合并字幕
+```bash
+curl -X GET http://localhost:10310/srt_en_merged/Am54LhN2NLk
+```
+
+### 4. 翻译服务
+
+#### 4.1 翻译字幕为中文
+```bash
+curl -X POST http://localhost:10310/translate_to_zh \
+  -H "Content-Type: application/json" \
+  -d '{
+    "video_id": "Am54LhN2NLk",
+    "source_lang": "en",
+    "translate_vendor": "google",
+    "translate_key": ""
+  }'
+```
+**参数说明**:
+- `video_id`: 视频 ID
+- `source_lang`: 源语言 (默认: "en")
+- `translate_vendor`: 翻译服务商 ("google", "deepl", "gpt-3.5-turbo-0125", "gpt-4", "gpt-4-turbo", "gpt-local")
+- `translate_key`: API 密钥 (DeepL/ChatGPT 需要)
+- `base_url`: 本地部署 API 地址 (仅 gpt-local 需要)
+- `model_name`: 本地部署模型名称 (仅 gpt-local 需要)
+
+#### 4.2 生成双语字幕
+```bash
+curl -X POST http://localhost:10310/generate_bilingual_srt \
+  -H "Content-Type: application/json" \
+  -d '{"video_id": "Am54LhN2NLk"}'
+```
+
+#### 4.3 下载中文字幕
+```bash
+curl -X GET http://localhost:10310/srt_zh_merged/Am54LhN2NLk
+```
+
+#### 4.4 下载双语字幕
+```bash
+curl -X GET http://localhost:10310/srt_bilingual/Am54LhN2NLk
+```
+
+#### 4.5 上传修改后的中文字幕
+```bash
+curl -X POST http://localhost:10310/translated_zh_upload \
+  -F "video_id=Am54LhN2NLk" \
+  -F "file=@/path/to/modified_subtitle.srt"
+```
+
+### 5. 语音合成 (TTS)
+
+#### 5.1 生成语音
+```bash
+curl -X POST http://localhost:10310/tts \
+  -H "Content-Type: application/json" \
+  -d '{
+    "video_id": "Am54LhN2NLk",
+    "tts_vendor": "edge",
+    "tts_character": "zh-CN-XiaoyiNeural"
+  }'
+```
+**参数说明**:
+- `video_id`: 视频 ID
+- `tts_vendor`: TTS 引擎 ("edge", "openai", "xtts_v2", "cosyvoice2", "fallback")
+- `tts_character`: 语音角色 (Edge TTS)
+- `voice`: 语音类型 (OpenAI TTS: "alloy", "echo", "fable", "onyx", "nova", "shimmer")
+- `model`: 模型类型 (OpenAI TTS: "tts-1", "tts-1-hd")
+- `instructions`: 语音指令 (OpenAI TTS)
+- `language`: 目标语言 (XTTS v2)
+- `model_name`: 模型名称 (XTTS v2)
+- `audio_source`: 参考音频来源 ("upload", "video_voice")
+- `reference_audio_path`: 参考音频路径
+- `speaker_name`: 说话人名称 (CosyVoice2)
+- `mode`: 生成模式 (CosyVoice2: "zero_shot", "cross_lingual", "instruct")
+- `instruction`: 指令 (CosyVoice2)
+- `model_path`: 模型路径 (CosyVoice2)
+- `fp16`: 使用 FP16 精度 (CosyVoice2)
+
+#### 5.2 下载生成的语音
+```bash
+curl -X GET http://localhost:10310/tts/Am54LhN2NLk
+```
+
+#### 5.3 上传参考音频
+```bash
+curl -X POST http://localhost:10310/upload_reference_audio \
+  -F "file=@/path/to/reference_audio.wav"
+```
+
+### 6. 语音连接
+
+#### 6.1 连接语音和视频
+```bash
+curl -X POST http://localhost:10310/voice_connect \
+  -H "Content-Type: application/json" \
+  -d '{"video_id": "Am54LhN2NLk"}'
+```
+
+#### 6.2 下载连接的语音
+```bash
+curl -X GET http://localhost:10310/voice_connect/Am54LhN2NLk
+```
+
+#### 6.3 下载语音连接日志
+```bash
+curl -X GET http://localhost:10310/voice_connect_log/Am54LhN2NLk
+```
+
+### 7. 视频合成
+
+#### 7.1 生成视频
+```bash
+# 基础视频生成
+curl -X POST http://localhost:10310/video_preview \
+  -H "Content-Type: application/json" \
+  -d '{
+    "video_id": "Am54LhN2NLk",
+    "audio_type": "translated",
+    "force_render": false,
+    "hardcode_subtitles": false
+  }'
+
+# 硬编码双语字幕视频生成
+curl -X POST http://localhost:10310/video_preview \
+  -H "Content-Type: application/json" \
+  -d '{
+    "video_id": "Am54LhN2NLk",
+    "audio_type": "translated",
+    "hardcode_subtitles": true,
+    "subtitle_type": "bilingual",
+    "subtitle_style": {
+      "font_name": "Arial",
+      "font_size": 20,
+      "primary_color": "&Hffffff",
+      "outline_color": "&H000000",
+      "back_color": "&H000000",
+      "outline_width": 2,
+      "shadow_depth": 1,
+      "alignment": 2,
+      "margin_v": 30,
+      "auto_scale": true,
+      "min_font_size": 14,
+      "max_font_size": 28,
+      "bilingual": {
+        "secondary_font_name": "SimHei",
+        "secondary_font_size": 24,
+        "secondary_color": "&Hcccccc",
+        "vertical_spacing": 5
+      }
+    }
+  }'
+```
+**参数说明**:
+- `video_id`: 视频 ID
+- `audio_type`: 音频类型 ("original", "translated") - 使用原始音频还是翻译后的音频
+- `force_render`: 强制重新渲染 (默认: false)
+- `hardcode_subtitles`: 硬编码字幕 (默认: false)
+- `subtitle_type`: 字幕类型 ("translated", "original", "bilingual")
+- `subtitle_style`: 字幕样式配置对象
+  - `font_name`: 字体名称
+  - `font_size`: 字体大小
+  - `primary_color`: 文字颜色 (ASS 格式)
+  - `outline_color`: 描边颜色 (ASS 格式)
+  - `back_color`: 背景颜色 (ASS 格式)
+  - `outline_width`: 描边宽度
+  - `shadow_depth`: 阴影深度
+  - `alignment`: 对齐方式 (1-8)
+  - `margin_v`: 垂直边距
+  - `auto_scale`: 自适应字体大小
+  - `min_font_size`: 最小字体大小
+  - `max_font_size`: 最大字体大小
+  - `bilingual`: 双语字幕配置 (可选)
+    - `secondary_font_name`: 副字体名称
+    - `secondary_font_size`: 副字体大小
+    - `secondary_color`: 副字体颜色 (ASS 格式)
+    - `vertical_spacing`: 中英文字幕间距 (默认: 5)
+
+**响应示例**:
+```json
+{
+  "message": "Submitted video rendering task",
+  "task_id": "abc123-def456-ghi789",
+  "filename": "Am54LhN2NLk_translated.mp4",
+  "download_url": "/video_preview/Am54LhN2NLk_translated.mp4",
+  "queue_length": 2
+}
+```
+
+#### 7.2 下载视频
+```bash
+curl -X GET http://localhost:10310/video_preview/Am54LhN2NLk_translated.mp4
+```
+
+#### 7.3 查询任务状态
+```bash
+curl -X GET http://localhost:10310/video_preview_status/abc123-def456-ghi789
+```
+
+### 8. 字幕管理
+
+#### 8.1 下载字幕文件
+```bash
+# 下载中文字幕
+curl -X GET http://localhost:10310/subtitles/Am54LhN2NLk
+
+# 下载双语字幕
+curl -X GET http://localhost:10310/srt_bilingual/Am54LhN2NLk
+```
+
+#### 8.2 上传修改后的字幕
+```bash
+curl -X POST http://localhost:10310/subtitles/Am54LhN2NLk \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "1\n00:00:01,000 --> 00:00:04,000\n这是修改后的字幕内容\n\n2\n00:00:04,000 --> 00:00:07,000\n第二行字幕内容"
+  }'
+```
+
+#### 8.3 下载硬编码字幕视频
+```bash
+curl -X GET "http://localhost:10310/subtitle_hardcoded/Am54LhN2NLk?subtitle_type=translated&font_name=Arial&font_size=24&auto_scale=true"
+```
+
+#### 8.4 下载带样式的硬编码字幕视频
+```bash
+curl -X GET "http://localhost:10310/subtitle_hardcoded_styled/Am54LhN2NLk?subtitle_type=translated&font_name=Arial&font_size=24&auto_scale=true"
+```
+
+### 9. 任务状态查询
+
+#### 9.1 查询视频预览任务状态
+```bash
+curl -X GET http://localhost:10310/video_preview_status/task_id_here
+```
+
 ## 🎯 使用方法
 
 ### 1. 视频翻译流程
@@ -206,50 +541,6 @@ CACHE_EXPIRE = 86400  # 24小时
 # Prometheus 指标
 METRICS_PORT = 8081
 ENABLE_METRICS = True
-```
-
-## 📊 API 接口
-
-### 主要端点
-
-- `POST /yt_download` - 下载 YouTube 视频
-- `POST /extra_audio` - 提取音频
-- `POST /transcribe` - 语音识别
-- `POST /translate_to_zh` - 翻译字幕
-- `POST /tts` - 语音合成
-- `POST /voice_connect` - 连接语音和视频
-- `POST /video_preview` - 视频预览合成（支持硬编码字幕）
-
-### 请求示例
-
-```bash
-# 下载视频
-curl -X POST http://localhost:10310/yt_download \
-  -H "Content-Type: application/json" \
-  -d '{"video_id": "Am54LhN2NLk"}'
-
-# 语音合成
-curl -X POST http://localhost:10310/tts \
-  -H "Content-Type: application/json" \
-  -d '{
-    "video_id": "Am54LhN2NLk",
-    "tts_vendor": "cosyvoice2",
-    "tts_character": "zh-CN-XiaoyiNeural",
-    "audio_source": "video_voice"
-  }'
-
-# 视频预览（不硬编码字幕）
-curl -X POST http://localhost:10310/video_preview \
-  -H "Content-Type: application/json" \
-  -d '{"video_id": "Am54LhN2NLk"}'
-
-# 视频预览（硬编码字幕）
-curl -X POST http://localhost:10310/video_preview \
-  -H "Content-Type: application/json" \
-  -d '{
-    "video_id": "Am54LhN2NLk",
-    "hardcode_subtitles": true
-  }'
 ```
 
 ## 🐳 Docker 部署

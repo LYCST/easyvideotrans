@@ -17,6 +17,7 @@ from moviepy.editor import VideoFileClip
 from functools import wraps
 from flask import Flask, request, jsonify, render_template, send_from_directory
 from prometheus_flask_exporter import PrometheusMetrics
+from src.service.video_synthesis.video_preview import get_subtitle_file_path
 
 app = Flask(__name__, template_folder="./appendix/templates", static_folder="./appendix/static")
 app.config.from_file("./configs/easyvideotrans.json", load=json.load)
@@ -485,7 +486,6 @@ def transhlate_to_zh(video_id):
     en_srt_merged_path = os.path.join(output_path, en_srt_merged_fn)
     zh_srt_merged_path = os.path.join(output_path, zh_srt_merged_fn)
     data = request.get_json()
-    video_id = data['video_id']
     translateVendor = data['translate_vendor']
     api_key = data['translate_key']
     
@@ -639,7 +639,6 @@ def voice_connect(video_id):
     output_path = app.config['OUTPUT_PATH']
 
     data = request.get_json()
-    video_id = data['video_id']
     voiceDir = os.path.join(output_path, video_id + "_zh_source")
     voice_connect_fn = video_id + "_zh.wav"
     voice_connect_path = os.path.join(output_path, voice_connect_fn)
@@ -702,7 +701,6 @@ def tts(video_id):
     output_path = app.config['OUTPUT_PATH']
 
     data = request.get_json()
-    video_id = data['video_id']
     srt_fn = f'{video_id}_zh_merged.srt'
     srt_path = os.path.join(output_path, srt_fn)
     tts_dir = os.path.join(output_path, video_id + "_zh_source")
@@ -884,36 +882,37 @@ def video_preview(video_id):
     output_path = app.config['OUTPUT_PATH']
 
     data = request.get_json()
-    video_id = data['video_id']
-    voice_connect_path = os.path.join(output_path, video_id + "_zh.wav")
-    audio_bg_path = os.path.join(output_path, f'{video_id}_bg.wav')
     
     # 使用新的视频文件路径
     video_hd_path = os.path.join(output_path, f"{video_id}_hd.mp4")  # 新的高清视频
     video_legacy_path = os.path.join(output_path, f"{video_id}.mp4")  # 兼容旧的标清视频
     video_fhd_legacy_path = os.path.join(output_path, f"{video_id}_fhd.mp4")  # 兼容旧的高清视频
     
-    # 获取渲染类型参数
-    render_type = data.get('render_type', 'preview')  # 'original', 'preview', 'both'
+    # 获取音频类型参数，默认为 'translated'
+    audio_type = data.get('audio_type', 'translated')  # 'original', 'translated'
     
     # 获取硬编码字幕参数，默认为False
     hardcode_subtitles = data.get('hardcode_subtitles', False)
     
-    # 获取字幕换行配置
-    max_chars_per_line = data.get('max_chars_per_line', 30)
-    
     # 获取字幕类型参数
-    subtitle_type = data.get('subtitle_type', 'chinese')  # 'chinese', 'bilingual'
+    subtitle_type = data.get('subtitle_type', 'translated')  # 'original', 'translated', 'bilingual'
     
-    # 兼容旧的参数
-    generate_original = data.get('generate_original', False)
-    if generate_original:
-        render_type = 'original'
+    # 获取字幕样式配置
+    subtitle_style_config = data.get('subtitle_style', {})
     
-    # 字幕文件路径
-    if subtitle_type == 'bilingual':
-        srt_path = os.path.join(output_path, f"{video_id}_bilingual.srt")
+    # 获取强制重新渲染参数，默认为False
+    force_render = data.get('force_render', False)
+    
+    # 根据字幕类型获取字幕文件路径
+    if hardcode_subtitles:
+        srt_path = get_subtitle_file_path(output_path, video_id, subtitle_type)
+        
+        # 检查字幕文件是否存在
+        if not os.path.exists(srt_path):
+            return jsonify({"message": log_error_return_str(
+                f"Subtitle file not found for hardcoding: {srt_path}. Please generate subtitle first.")}), 404
     else:
+        # 不硬编码时使用默认字幕文件
         srt_path = os.path.join(output_path, f"{video_id}_zh_merged.srt")
 
     # 检查视频
@@ -932,63 +931,190 @@ def video_preview(video_id):
         video_source_path = video_legacy_path
         app.logger.info(f"Using legacy SD video: {video_legacy_path}")
 
+    # 根据音频类型选择音频文件
+    if audio_type == 'translated':
+        # 使用翻译后的音频（需要人声和背景音乐）
+        voice_connect_path = os.path.join(output_path, video_id + "_zh.wav")
+        audio_bg_path = os.path.join(output_path, f'{video_id}_bg.wav')
+        
+        # 检查翻译后的音频文件是否存在
+        if (not os.path.exists(voice_connect_path)) or (not os.path.exists(audio_bg_path)):
+            return jsonify({"message": log_warning_return_str(
+                f'Chinese Voice {video_id + "_zh.wav"} or background music not found at {output_path}')}), 404
+    else:
+        # 使用原始音频
+        voice_connect_path = os.path.join(output_path, f"{video_id}_audio.wav")
+        audio_bg_path = None
+        
+        # 检查原始音频文件是否存在
+        if not os.path.exists(voice_connect_path):
+            return jsonify({"message": log_warning_return_str(
+                f'Original audio {video_id}_audio.wav not found at {output_path}')}), 404
+
     blocking = data.get('blocking', False)
     tasks = []
 
-    # 根据渲染类型生成任务
-    if render_type in ['preview', 'both']:
-        # 检查预览视频所需的文件
-        if (not os.path.exists(voice_connect_path)) or (not os.path.exists(audio_bg_path)):
-            return jsonify({"message": log_warning_return_str(
-                f'Chinese Voice {video_id + "_zh.wav"} not found at {output_path}')}), 404
-        
-        # 如果启用硬编码字幕，检查字幕文件是否存在
-        if hardcode_subtitles and not os.path.exists(srt_path):
-            subtitle_file = f"{video_id}_bilingual.srt" if subtitle_type == 'bilingual' else f"{video_id}_zh_merged.srt"
-            return jsonify({"message": log_warning_return_str(
-                f'Subtitle file {subtitle_file} not found for hardcoding')}), 404
-        
-        # 生成预览视频任务
-        video_preview_path = os.path.join(output_path, f"{video_id}_preview.mp4")
-        preview_task = video_preview_task.delay(video_source_path, voice_connect_path, audio_bg_path, video_preview_path, srt_path, hardcode_subtitles, max_chars_per_line, False)
-        tasks.append(('preview', preview_task))
+    # 创建字幕样式对象
+    subtitle_style = None
+    subtitle_style_dict = None
+    if hardcode_subtitles and subtitle_style_config:
+        try:
+            from src.service.video_synthesis.video_preview import SubtitleStyle
+            
+            # 获取双语字幕配置
+            bilingual_config = subtitle_style_config.get('bilingual', None)
+            app.logger.info(f"双语字幕配置: {bilingual_config}")
+            app.logger.info(f"双语字幕配置类型: {type(bilingual_config)}")
+            if bilingual_config:
+                app.logger.info(f"双语字幕配置内容: {bilingual_config}")
+            
+            subtitle_style = SubtitleStyle(
+                font_name=subtitle_style_config.get('font_name', 'Arial'),
+                font_size=subtitle_style_config.get('font_size', 24),
+                primary_color=subtitle_style_config.get('primary_color', '&Hffffff'),
+                outline_color=subtitle_style_config.get('outline_color', '&H000000'),
+                back_color=subtitle_style_config.get('back_color', '&H000000'),
+                outline_width=subtitle_style_config.get('outline_width', 2),
+                shadow_depth=subtitle_style_config.get('shadow_depth', 1),
+                alignment=subtitle_style_config.get('alignment', 2),
+                margin_v=subtitle_style_config.get('margin_v', 30),
+                margin_l=subtitle_style_config.get('margin_l', 10),
+                margin_r=subtitle_style_config.get('margin_r', 10),
+                auto_scale=subtitle_style_config.get('auto_scale', True),
+                min_font_size=subtitle_style_config.get('min_font_size', 16),
+                max_font_size=subtitle_style_config.get('max_font_size', 32),
+                bilingual_config=bilingual_config
+            )
+            # 转换为字典格式用于Celery序列化
+            subtitle_style_dict = {
+                'font_name': subtitle_style.font_name,
+                'font_size': subtitle_style.font_size,
+                'primary_color': subtitle_style.primary_color,
+                'outline_color': subtitle_style.outline_color,
+                'back_color': subtitle_style.back_color,
+                'outline_width': subtitle_style.outline_width,
+                'shadow_depth': subtitle_style.shadow_depth,
+                'alignment': subtitle_style.alignment,
+                'margin_v': subtitle_style.margin_v,
+                'margin_l': subtitle_style.margin_l,
+                'margin_r': subtitle_style.margin_r,
+                'auto_scale': subtitle_style.auto_scale,
+                'min_font_size': subtitle_style.min_font_size,
+                'max_font_size': subtitle_style.max_font_size,
+                'bilingual_config': subtitle_style.bilingual_config
+            }
+            app.logger.info(f"字幕样式配置: {subtitle_style_config}")
+            app.logger.info(f"subtitle_style_dict: {subtitle_style_dict}")
+        except Exception as e:
+            app.logger.warning(f"字幕样式配置失败: {e}")
 
-    if render_type in ['original', 'both']:
-        # 检查原始视频所需的文件
-        audio_path = os.path.join(output_path, f"{video_id}_audio.wav")
-        if not os.path.exists(audio_path):
-            return jsonify({"message": log_warning_return_str(
-                f'Original audio {video_id}_audio.wav not found at {output_path}')}), 404
+    # 生成视频文件名（考虑音频类型、硬编码字幕配置）
+    video_filename = get_video_filename_with_audio_and_subtitle_config(
+        video_id, audio_type, hardcode_subtitles, subtitle_type, subtitle_style_config
+    )
+    video_path = os.path.join(output_path, video_filename)
+    
+    # 检查是否已存在相同配置的视频
+    if os.path.exists(video_path) and not force_render:
+        app.logger.info(f"视频已存在: {video_filename}")
+        return jsonify({
+            "message": log_info_return_str(f"Video already exists: {video_filename}"),
+            "task_id": None,
+            "filename": video_filename,
+            "download_url": f"/video_preview/{video_filename}"
+        }), 200
+    
+    # 如果启用硬编码字幕，检查字幕文件是否存在
+    if hardcode_subtitles and not os.path.exists(srt_path):
+        return jsonify({"message": log_warning_return_str(
+            f'Subtitle file not found for hardcoding: {srt_path}')}), 404
+    
+    # 如果是双语字幕且有双语配置，创建ASS字幕文件
+    app.logger.info(f"检查双语字幕条件: hardcode_subtitles={hardcode_subtitles}, subtitle_type={subtitle_type}")
+    app.logger.info(f"subtitle_style_dict存在: {subtitle_style_dict is not None}")
+    if subtitle_style_dict:
+        app.logger.info(f"bilingual_config存在: {subtitle_style_dict.get('bilingual_config') is not None}")
+        app.logger.info(f"bilingual_config内容: {subtitle_style_dict.get('bilingual_config')}")
+    
+    if hardcode_subtitles and subtitle_type == 'bilingual' and subtitle_style_dict and subtitle_style_dict.get('bilingual_config'):
+        try:
+            from src.service.video_synthesis.video_preview import create_bilingual_ass_subtitle, SubtitleStyle
+            
+            # 重新创建SubtitleStyle对象
+            subtitle_style = SubtitleStyle(
+                font_name=subtitle_style_dict.get('font_name', 'Arial'),
+                font_size=subtitle_style_dict.get('font_size', 24),
+                primary_color=subtitle_style_dict.get('primary_color', '&Hffffff'),
+                outline_color=subtitle_style_dict.get('outline_color', '&H000000'),
+                back_color=subtitle_style_dict.get('back_color', '&H000000'),
+                outline_width=subtitle_style_dict.get('outline_width', 2),
+                shadow_depth=subtitle_style_dict.get('shadow_depth', 1),
+                alignment=subtitle_style_dict.get('alignment', 2),
+                margin_v=subtitle_style_dict.get('margin_v', 30),
+                margin_l=subtitle_style_dict.get('margin_l', 10),
+                margin_r=subtitle_style_dict.get('margin_r', 10),
+                auto_scale=subtitle_style_dict.get('auto_scale', True),
+                min_font_size=subtitle_style_dict.get('min_font_size', 16),
+                max_font_size=subtitle_style_dict.get('max_font_size', 32),
+                bilingual_config=subtitle_style_dict.get('bilingual_config')
+            )
+            
+            # 创建ASS字幕文件
+            ass_srt_path = create_bilingual_ass_subtitle(srt_path, subtitle_style)
+            if ass_srt_path and os.path.exists(ass_srt_path):
+                app.logger.info(f"✅ 双语ASS字幕文件已创建: {ass_srt_path}")
+                srt_path = ass_srt_path  # 使用ASS字幕文件路径
+            else:
+                app.logger.error(f"❌ 双语ASS字幕创建失败，无法继续渲染")
+                return jsonify({"message": log_error_return_str(
+                    f'Failed to create bilingual ASS subtitle file for: {srt_path}')}), 500
+        except Exception as e:
+            app.logger.error(f"❌ 创建双语ASS字幕时出错: {e}")
+            return jsonify({"message": log_error_return_str(
+                f'Error creating bilingual ASS subtitle: {str(e)}')}), 500
+    
+    # 最终检查：确保字幕文件存在且可读
+    if hardcode_subtitles:
+        if not os.path.exists(srt_path):
+            return jsonify({"message": log_error_return_str(
+                f'Subtitle file not found: {srt_path}')}), 404
         
-        # 生成原始视频任务
-        video_original_path = os.path.join(output_path, f"{video_id}_original.mp4")
-        original_task = video_preview_task.delay(video_source_path, audio_path, None, video_original_path, None, False, max_chars_per_line, True)
-        tasks.append(('original', original_task))
+        # 检查文件大小，确保不是空文件
+        if os.path.getsize(srt_path) == 0:
+            return jsonify({"message": log_error_return_str(
+                f'Subtitle file is empty: {srt_path}')}), 400
+        
+        app.logger.info(f"✅ 字幕文件检查通过: {srt_path} (大小: {os.path.getsize(srt_path)} 字节)")
+    
+    # 生成视频任务
+    task = video_preview_task.delay(video_source_path, voice_connect_path, audio_bg_path, video_path, srt_path, hardcode_subtitles, subtitle_style_dict, subtitle_type, False)
+    tasks.append(('video', task))
 
     # 如果是阻塞模式，等待所有任务完成
     if blocking:
-        results = []
         for task_type, task in tasks:
             try:
                 task.get()  # 等待任务完成
-                results.append(f"{task_type} video")
             except Exception as e:
                 return jsonify({"message": log_error_return_str(
-                    f"Failed to render {task_type} video: {str(e)}")}), 500
+                    f"Failed to render video: {str(e)}")}), 500
         
-        return jsonify({"message": log_info_return_str(
-            f"Successfully rendered: {', '.join(results)}")}), 200
+        return jsonify({
+            "message": log_info_return_str(f"Successfully rendered video: {video_filename}"),
+            "task_id": None,
+            "filename": video_filename,
+            "download_url": f"/video_preview/{video_filename}"
+        }), 200
 
     # 返回任务信息
-    task_info = {}
-    for task_type, task in tasks:
-        task_info[f"{task_type}_task_id"] = task.id
-
+    task_id = tasks[0][1].id if tasks else None
     queue_length = get_queue_length('video_preview')
+    
     return jsonify({
-        "message": log_info_return_str(f"Submitted video rendering tasks: {render_type}"),
-        "render_type": render_type,
-        "tasks": task_info,
+        "message": log_info_return_str(f"Submitted video rendering task"),
+        "task_id": task_id,
+        "filename": video_filename,
+        "download_url": f"/video_preview/{video_filename}",
         'queue_length': queue_length
     }), 202
 
@@ -1022,69 +1148,20 @@ def video_preview_status(task_id):
     return jsonify(response)
 
 
-@app.route('/video_preview/<video_id>', methods=['GET'])
+@app.route('/video_preview/<filename>', methods=['GET'])
 @pytvzhen_api_request_counter
-def video_preview_serve(video_id):
+def video_preview_serve(filename):
     output_path = app.config['OUTPUT_PATH']
-
-    video_preview_fn = f"{video_id}_preview.mp4"
-    video_preview_path = os.path.join(output_path, video_preview_fn)
-
-    if os.path.exists(video_preview_path):
-        return send_from_directory(output_path, video_preview_fn, as_attachment=True)
+    
+    file_path = os.path.join(output_path, filename)
+    if os.path.exists(file_path):
+        return send_from_directory(output_path, filename, as_attachment=True)
 
     return jsonify({"message": log_warning_return_str(
-        f'Video preview {video_preview_fn} not found at {video_preview_path}')}), 404
+        f'Video file not found: {filename}')}), 404
 
 
-@app.route('/video_original', methods=['POST'])
-@pytvzhen_api_request_counter
-@require_video_id_from_post_request
-def video_original(video_id):
-    """生成原始视频（高清视频+原始音频）"""
-    output_path = app.config['OUTPUT_PATH']
-    
-    data = request.get_json()
-    video_id = data['video_id']
-    
-    # 检查原始视频是否已存在
-    video_original_fn = f"{video_id}_original.mp4"
-    video_original_path = os.path.join(output_path, video_original_fn)
-    
-    if os.path.exists(video_original_path):
-        return jsonify({"message": log_info_return_str(
-            f"Original video {video_original_fn} already exists at {video_original_path}"),
-            "video_id": video_id}), 200
-    
-    # 调用视频预览功能生成原始视频
-    data['render_type'] = 'original'
-    return video_preview(video_id)
 
-
-@app.route('/video_original/<video_id>', methods=['GET'])
-@pytvzhen_api_request_counter
-def video_original_serve(video_id):
-    """下载原始视频"""
-    output_path = app.config['OUTPUT_PATH']
-    
-    video_original_fn = f"{video_id}_original.mp4"
-    video_original_path = os.path.join(output_path, video_original_fn)
-    
-    if os.path.exists(video_original_path):
-        return send_from_directory(output_path, video_original_fn, as_attachment=True)
-    
-    return jsonify({"message": log_warning_return_str(
-        f'Original video {video_original_fn} not found at {video_original_path}')}), 404
-
-
-@app.route('/video_both', methods=['POST'])
-@pytvzhen_api_request_counter
-@require_video_id_from_post_request
-def video_both(video_id):
-    """同时生成原始视频和预览视频"""
-    data = request.get_json()
-    data['render_type'] = 'both'
-    return video_preview(video_id)
 
 
 @app.route('/subtitles/<video_id>', methods=['GET'])
@@ -1156,6 +1233,83 @@ def upload_subtitles(video_id):
             f"Failed to save subtitle file: {str(e)}")}), 500
 
 
+def get_video_filename_with_audio_and_subtitle_config(video_id, audio_type, hardcode_subtitles=False, subtitle_type=None, subtitle_style=None):
+    """
+    根据音频类型和字幕配置生成视频文件名
+    
+    Args:
+        video_id: 视频ID
+        audio_type: 音频类型 ('original', 'translated')
+        hardcode_subtitles: 是否硬编码字幕
+        subtitle_type: 字幕类型
+        subtitle_style: 字幕样式配置
+    
+    Returns:
+        str: 视频文件名
+    """
+    # 基础文件名
+    if audio_type == 'original':
+        base_name = f"{video_id}_original"
+    else:
+        base_name = f"{video_id}_translated"
+    
+    # 如果硬编码字幕，添加标识
+    if hardcode_subtitles:
+        base_name += "_hardcoded"
+    
+    return f"{base_name}.mp4"
+
+
+def get_video_filename_with_subtitle_config(video_id, video_type, hardcode_subtitles=False, subtitle_type=None, subtitle_style=None):
+    """
+    根据字幕配置生成视频文件名
+    
+    Args:
+        video_id: 视频ID
+        video_type: 视频类型 ('preview', 'original')
+        hardcode_subtitles: 是否硬编码字幕
+        subtitle_type: 字幕类型
+        subtitle_style: 字幕样式配置
+    
+    Returns:
+        str: 视频文件名
+    """
+    if not hardcode_subtitles:
+        # 不硬编码字幕时使用简单文件名
+        return f"{video_id}_{video_type}.mp4"
+    else:
+        # 硬编码字幕时使用简单标识
+        return f"{video_id}_{video_type}_hardcoded.mp4"
+
+
+def get_download_url(video_id, video_type, hardcode_subtitles=False, subtitle_type=None, subtitle_style=None, base_url=None):
+    """
+    根据视频配置生成下载URL
+    
+    Args:
+        video_id: 视频ID
+        video_type: 视频类型 ('preview', 'original')
+        hardcode_subtitles: 是否硬编码字幕
+        subtitle_type: 字幕类型
+        subtitle_style: 字幕样式配置 (dict)
+        base_url: 基础URL，如果为None则使用相对路径
+    
+    Returns:
+        str: 下载URL
+    """
+    # 构建基础URL
+    if base_url:
+        url = f"{base_url}/video_{video_type}/{video_id}"
+    else:
+        url = f"/video_{video_type}/{video_id}"
+    
+    # 如果启用了硬编码字幕，添加参数
+    if hardcode_subtitles:
+        url += '?hardcode_subtitles=true'
+    
+    return url
+
+
 def _merge_bilingual_srt(en_srt_path, zh_srt_path, output_path):
     """
     合并英文和中文字幕为双语字幕
@@ -1212,6 +1366,95 @@ def _merge_bilingual_srt(en_srt_path, zh_srt_path, output_path):
     except Exception as e:
         app.logger.error(f"Failed to merge bilingual SRT: {e}")
         return False
+
+
+@app.route('/subtitle_hardcoded/<video_id>', methods=['GET'])
+@pytvzhen_api_request_counter
+def subtitle_hardcoded_serve(video_id):
+    """下载硬编码字幕文件"""
+    output_path = app.config['OUTPUT_PATH']
+    
+    # 获取查询参数
+    subtitle_type = request.args.get('type', 'translated')  # 'original', 'translated', 'bilingual'
+    
+    # 根据字幕类型获取字幕文件路径
+    if subtitle_type == 'original':
+        subtitle_filename = f'{video_id}_en_merged.srt'
+    elif subtitle_type == 'translated':
+        subtitle_filename = f'{video_id}_zh_merged.srt'
+    elif subtitle_type == 'bilingual':
+        subtitle_filename = f'{video_id}_bilingual.srt'
+    else:
+        return jsonify({"message": log_warning_return_str(
+            f'Invalid subtitle type: {subtitle_type}')}), 400
+    
+    subtitle_path = os.path.join(output_path, subtitle_filename)
+    
+    if os.path.exists(subtitle_path):
+        return send_from_directory(output_path, subtitle_filename, as_attachment=True)
+    
+    return jsonify({"message": log_warning_return_str(
+        f'Hardcoded subtitle {subtitle_filename} not found at {subtitle_path}')}), 404
+
+
+@app.route('/subtitle_hardcoded_styled/<video_id>', methods=['GET'])
+@pytvzhen_api_request_counter
+def subtitle_hardcoded_styled_serve(video_id):
+    """下载带样式的硬编码字幕文件"""
+    output_path = app.config['OUTPUT_PATH']
+    
+    # 获取查询参数
+    subtitle_type = request.args.get('type', 'translated')  # 'original', 'translated', 'bilingual'
+    font_name = request.args.get('font_name', 'Arial')
+    font_size = request.args.get('font_size', '24')
+    auto_scale = request.args.get('auto_scale', 'false')
+    
+    # 根据字幕类型获取字幕文件路径
+    if subtitle_type == 'original':
+        base_subtitle_filename = f'{video_id}_en_merged.srt'
+    elif subtitle_type == 'translated':
+        base_subtitle_filename = f'{video_id}_zh_merged.srt'
+    elif subtitle_type == 'bilingual':
+        base_subtitle_filename = f'{video_id}_bilingual.srt'
+    else:
+        return jsonify({"message": log_warning_return_str(
+            f'Invalid subtitle type: {subtitle_type}')}), 400
+    
+    base_subtitle_path = os.path.join(output_path, base_subtitle_filename)
+    
+    if not os.path.exists(base_subtitle_path):
+        return jsonify({"message": log_warning_return_str(
+            f'Base subtitle {base_subtitle_filename} not found at {base_subtitle_path}')}), 404
+    
+    # 生成带样式的字幕文件名
+    styled_filename = f'{video_id}_{subtitle_type}_styled.srt'
+    styled_path = os.path.join(output_path, styled_filename)
+    
+    # 如果带样式的文件不存在，尝试生成
+    if not os.path.exists(styled_path):
+        try:
+            from src.service.video_synthesis.video_preview import SubtitleStyle, create_adaptive_subtitle_srt
+            
+            # 创建字幕样式配置
+            style_config = SubtitleStyle(
+                font_name=font_name,
+                font_size=int(font_size),
+                auto_scale=auto_scale.lower() == 'true'
+            )
+            
+            # 生成带样式的字幕文件
+            styled_path = create_adaptive_subtitle_srt(base_subtitle_path, style_config)
+            
+            if not os.path.exists(styled_path):
+                return jsonify({"message": log_warning_return_str(
+                    f'Failed to generate styled subtitle file')}), 500
+                
+        except Exception as e:
+            app.logger.error(f"生成带样式字幕文件失败: {e}")
+            return jsonify({"message": log_error_return_str(
+                f'Failed to generate styled subtitle: {str(e)}')}), 500
+    
+    return send_from_directory(output_path, os.path.basename(styled_path), as_attachment=True)
 
 
 if __name__ == '__main__':
