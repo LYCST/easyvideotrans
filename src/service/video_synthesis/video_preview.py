@@ -132,8 +132,7 @@ YCbCr Matrix: TV.601
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Chinese,{subtitle_style.font_name},{subtitle_style.font_size},{subtitle_style.primary_color},&H000000,{subtitle_style.outline_color},{subtitle_style.back_color},0,0,0,0,100,100,0,0,1,{subtitle_style.outline_width},{subtitle_style.shadow_depth},{subtitle_style.alignment},{subtitle_style.margin_l},{subtitle_style.margin_r},{subtitle_style.margin_v + secondary_style['vertical_spacing']},1
-Style: English,{secondary_style['font_name']},{secondary_style['font_size']},{secondary_style['primary_color']},&H000000,{secondary_style['outline_color']},{secondary_style['back_color']},0,0,0,0,100,100,0,0,1,{secondary_style['outline_width']},{secondary_style['shadow_depth']},{secondary_style['alignment']},{secondary_style['margin_l']},{secondary_style['margin_r']},{subtitle_style.margin_v},1
+Style: Bilingual,{subtitle_style.font_name},{subtitle_style.font_size},{subtitle_style.primary_color},&H000000,{subtitle_style.outline_color},{subtitle_style.back_color},0,0,0,0,100,100,0,0,1,{subtitle_style.outline_width},{subtitle_style.shadow_depth},{subtitle_style.alignment},{subtitle_style.margin_l},{subtitle_style.margin_r},{subtitle_style.margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -165,11 +164,29 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 start_time = f"{start_hours:01d}:{start_minutes:02d}:{start_seconds:02d}.{start_centiseconds:02d}"
                 end_time = f"{end_hours:01d}:{end_minutes:02d}:{end_seconds:02d}.{end_centiseconds:02d}"
                 
-                # 创建两个事件：中文在上，英文在下
-                if chinese_text:
-                    ass_events.append(f"Dialogue: 1,{start_time},{end_time},Chinese,,0,0,0,,{chinese_text}")
-                if english_text:
-                    ass_events.append(f"Dialogue: 0,{start_time},{end_time},English,,0,0,0,,{english_text}")
+                # 创建单条Dialogue，使用样式标签控制中英文
+                if chinese_text and english_text:
+                    # 使用样式标签控制字体大小和颜色
+                    # \fs{font_size} - 字体大小
+                    # \c&H{color} - 字体颜色
+                    # \N - 换行
+                    # \pbo{offset} - 行间距调整
+                    
+                    chinese_font_size = subtitle_style.font_size
+                    english_font_size = secondary_style['font_size']
+                    chinese_color = subtitle_style.primary_color
+                    english_color = secondary_style['primary_color']
+                    vertical_spacing = secondary_style['vertical_spacing']
+                    
+                    # 构建双语字幕内容
+                    # 注意：ASS样式标签中，\N换行符需要正确的格式
+                    bilingual_text = f"{{\\fs{chinese_font_size}\\c{chinese_color}}}{chinese_text}\\N{{\\pbo-{vertical_spacing}\\fs{english_font_size}\\c{english_color}}}{english_text}"
+                    
+                    ass_events.append(f"Dialogue: 0,{start_time},{end_time},Bilingual,,0,0,0,,{bilingual_text}")
+                elif chinese_text:
+                    ass_events.append(f"Dialogue: 0,{start_time},{end_time},Bilingual,,0,0,0,,{chinese_text}")
+                elif english_text:
+                    ass_events.append(f"Dialogue: 0,{start_time},{end_time},Bilingual,,0,0,0,,{english_text}")
         
         # 写入ASS文件
         with open(ass_path, 'w', encoding='utf-8') as f:
